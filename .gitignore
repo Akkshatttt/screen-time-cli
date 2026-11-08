@@ -1,0 +1,17 @@
+# Build output
+*.exe
+*.o
+build/
+
+# Personal data: never commit usage data or reports
+*.db
+*.db-wal
+*.db-shm
+bench/results/
+
+# Author-only: handover, planning (kept locally, never pushed)
+HANDOVER.md
+LEARNINGS.md
+FEATURES.md
+CLAUDE.md
+.claude/
