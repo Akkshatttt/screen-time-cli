@@ -1,0 +1,149 @@
+/* Render primitives (ASCII mode) and the numeric core of each insight, on hand-built spans in memory. */
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <windows.h>
+#include "../src/cli/insights/ins.h"
+#include "../src/cli/render.h"
+
+static time_t at(int y, int mo, int d, int h, int mi, int s)
+{
+    struct tm tm;
+    memset(&tm, 0, sizeof tm);
+    tm.tm_year = y - 1900; tm.tm_mon = mo - 1; tm.tm_mday = d; tm.tm_hour = h; tm.tm_min = mi; tm.tm_sec = s;
+    tm.tm_isdst = -1;
+    return mktime(&tm);
+}
+
+static sqlite3 *mkdb(void)
+{
+    sqlite3 *db;
+    sqlite3_open(":memory:", &db);
+    assert(stc_schema(db) == 0);
+    stc_intern_exe(db, "C:\\a.exe", "a.exe");   /* ids 1..4 */
+    stc_intern_exe(db, "C:\\b.exe", "b.exe");
+    stc_intern_exe(db, "C:\\c.exe", "c.exe");
+    stc_intern_exe(db, "C:\\d.exe", "d.exe");
+    stc_intern_title(db, "t");
+    return db;
+}
+
+static void add(sqlite3 *db, time_t s, time_t e, int exe, int state)
+{
+    char sql[160];
+    snprintf(sql, sizeof sql, "INSERT INTO span(start_ts,end_ts,exe_id,title_id,state) VALUES(%I64d,%I64d,%d,1,%d)",
+             (long long)s, (long long)e, exe, state);
+    assert(sqlite3_exec(db, sql, 0, 0, 0) == 0);
+}
+
+static void test_render(void)
+{
+    char b[512];
+    long v[2] = { 0, 10 };
+    rd_set(0, 0, 80);
+    assert(!strcmp(rd_dur(b, sizeof b, 3725), "1h 02m"));
+    assert(!strcmp(rd_dur(b, sizeof b, 45 * 60), "45m"));
+    assert(!strcmp(rd_dur(b, sizeof b, 59), "59s"));
+    assert(!strcmp(rd_bar(b, sizeof b, 1.0, 0, 10), "##########"));
+    assert(!strcmp(rd_bar(b, sizeof b, 0.5, 0.25, 8), "####++.."));
+    assert(!strcmp(rd_bar(b, sizeof b, 0, 0, 4), "...."));
+    assert(!strcmp(rd_spark(b, sizeof b, v, 2), ".@"));
+    assert(!strcmp(rd_trend(b, sizeof b, 120, 100), "^ +20%"));
+    assert(!strcmp(rd_trend(b, sizeof b, 80, 100), "v -20%"));
+    assert(!strcmp(rd_trend(b, sizeof b, 100, 100), "-"));
+    assert(!strcmp(rd_trend(b, sizeof b, 5, 0), "new"));
+    assert(!strcmp(rd_trunc(b, sizeof b, "abcdefghij", 6), "abcde~"));
+    assert(!strcmp(rd_trunc(b, sizeof b, "abc", 6), "abc"));
+    assert(!strcmp(rd_heat(b, sizeof b, 2), "::"));
+    rd_set(1, 1, 80);                                   /* color + unicode: escapes present, bar still sized */
+    assert(strstr(rd_bar(b, sizeof b, 1.0, 0, 3), "\xe2\x96\x88") && strstr(b, "\x1b["));
+    rd_set(0, 0, 80);
+}
+
+static void test_profile(void)
+{
+    sqlite3 *db = mkdb();
+    profile p;
+    time_t d0 = at(2026, 1, 5, 0, 0, 0);               /* a Monday */
+    add(db, at(2026, 1, 5, 9, 30, 0), at(2026, 1, 5, 10, 30, 0), 1, STC_ACTIVE);       /* crosses an hour */
+    add(db, at(2026, 1, 5, 23, 30, 0), at(2026, 1, 6, 0, 30, 0), 2, STC_PASSIVE);      /* crosses midnight */
+    add(db, at(2026, 1, 6, 2, 0, 0), at(2026, 1, 6, 3, 0, 0), 3, STC_AWAY);            /* away is ignored */
+    profile_compute(db, d0, d0 + 2 * 86400, NULL, &p);
+    assert(p.ndays >= 2);
+    assert(p.act == 3600 && p.pas == 3600);
+    assert(p.hm[0][9] == 1800 && p.hm[0][10] == 1800);  /* Monday 09 and 10 */
+    assert(p.hm[0][23] == 1800 && p.hm[1][0] == 1800);  /* Mon 23, Tue 00 */
+    assert(p.day_act[0] == 3600 && p.day_pas[0] == 1800 && p.day_pas[1] == 1800);
+    profile_sort(&p);
+    assert(p.napps == 2 && p.apps[0].act + p.apps[0].pas >= p.apps[1].act + p.apps[1].pas);
+    profile_free(&p);
+    profile_compute(db, d0, d0 + 2 * 86400, "b.exe", &p);   /* --app filter */
+    assert(p.act == 0 && p.pas == 3600);
+    profile_free(&p);
+    sqlite3_close(db);
+}
+
+static void test_focus(void)
+{
+    sqlite3 *db = mkdb();
+    focus_result r;
+    add(db, at(2026, 1, 5, 9, 0, 0), at(2026, 1, 5, 9, 40, 0), 1, STC_ACTIVE);
+    add(db, at(2026, 1, 5, 9, 40, 0), at(2026, 1, 5, 9, 40, 30), 2, STC_ACTIVE);       /* 30 s glance: block continues */
+    add(db, at(2026, 1, 5, 9, 40, 30), at(2026, 1, 5, 10, 10, 0), 1, STC_ACTIVE);
+    add(db, at(2026, 1, 5, 10, 30, 0), at(2026, 1, 5, 10, 50, 0), 3, STC_ACTIVE);      /* after a 20 min break */
+    focus_compute(db, at(2026, 1, 5, 0, 0, 0), at(2026, 1, 6, 0, 0, 0), NULL, &r);
+    assert(r.sessions == 2 && r.breaks == 1 && r.total_break_s == 1200);
+    assert(r.longest_session_s == 4200 && r.total_session_s == 5400);
+    assert(r.focus_s == 4200);                          /* only the a.exe block is >= 25 min */
+    assert(r.nblocks == 2 && r.blocks[0].dur == 4200 && r.blocks[1].dur == 1200);
+    assert(!strcmp(r.blocks[0].name, "a.exe"));
+    sqlite3_close(db);
+}
+
+static void test_switches(void)
+{
+    sqlite3 *db = mkdb();
+    switch_result r;
+    add(db, at(2026, 1, 5, 9, 0, 0), at(2026, 1, 5, 9, 10, 0), 1, STC_ACTIVE);
+    add(db, at(2026, 1, 5, 9, 10, 0), at(2026, 1, 5, 9, 20, 0), 2, STC_ACTIVE);
+    add(db, at(2026, 1, 5, 9, 20, 0), at(2026, 1, 5, 9, 30, 0), 1, STC_ACTIVE);
+    add(db, at(2026, 1, 5, 9, 30, 0), at(2026, 1, 5, 9, 40, 0), 2, STC_ACTIVE);
+    add(db, at(2026, 1, 5, 11, 0, 0), at(2026, 1, 5, 11, 10, 0), 4, STC_ACTIVE);       /* an hour later: not a switch */
+    switches_compute(db, at(2026, 1, 5, 0, 0, 0), at(2026, 1, 6, 0, 0, 0), &r);
+    assert(r.switches == 3 && r.by_hour[9] == 3);
+    assert(r.active_s == 2400 + 600);
+    assert(r.npairs == 2 && r.pairs[0].n == 2 && !strcmp(r.pairs[0].from, "a.exe") && !strcmp(r.pairs[0].to, "b.exe"));
+    sqlite3_close(db);
+}
+
+static void test_rules_and_args(void)
+{
+    int n;
+    const stc_kv *rules;
+    stc_args a;
+    char *argv[] = { "x", "report", "--days", "3", "--app", "chr", "--json", "--by", "category" };
+    SetEnvironmentVariableW(L"STC_DATA_DIR", L"build\\cfg_test");   /* no config.ini there: built-in defaults */
+    assert(!strcmp(stc_category("chrome.exe"), "Browsing") && !strcmp(stc_category("CHROME.EXE"), "Browsing"));
+    assert(!strcmp(stc_category("unknown.exe"), "Other"));
+    rules = stc_topics(&n);
+    assert(n > 0);
+    {   int t = stc_topic_of("Cats - YouTube - Google Chrome", rules, n);
+        assert(t >= 0 && !strcmp(rules[t].key, "YouTube")); }
+    assert(stc_topic_of("Untitled - Notepad", rules, n) < 0);
+
+    assert(args_parse(9, argv, 2, 1, &a) == 0);
+    assert(a.days == 3 && a.json && a.by_cat && !strcmp(a.app, "chr") && a.to > a.from);
+    assert(args_parse(2, argv, 2, 7, &a) == 0 && a.days == 7);
+}
+
+int main(void)
+{
+    test_render();
+    test_profile();
+    test_focus();
+    test_switches();
+    test_rules_and_args();
+    puts("insight tests passed");
+    return 0;
+}

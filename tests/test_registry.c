@@ -136,6 +136,41 @@ int main(void)
     assert(!exists(dst));
     assert(!has_value(in.uninst, L"UninstallString"));
     assert(!has_value(in.run, L"screen-time-cli"));
+    /* ---- application uninstall keeps data; clean uninstall deletes only files this program created ---- */
+    {
+        wchar_t data[MAX_PATH], f[MAX_PATH], other[MAX_PATH];
+        static const wchar_t *mine[] = { L"data.db", L"data.db-wal", L"data.db.bak-v0", L"config.ini" };
+        HANDLE h;
+        int k;
+        _snwprintf(data, MAX_PATH, L"%ls\\build\\data_clean", cwd);
+        SetEnvironmentVariableW(L"STC_DATA_DIR", data);
+        CreateDirectoryW(data, NULL);
+        for (k = 0; k < 4; k++) {
+            _snwprintf(f, MAX_PATH, L"%ls\\%ls", data, mine[k]);
+            h = CreateFileW(f, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+            CloseHandle(h);
+        }
+        _snwprintf(other, MAX_PATH, L"%ls\\notes-by-user.txt", data);
+        h = CreateFileW(other, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+        CloseHandle(h);
+
+        assert(stc_install(&in, src) == 0);
+        assert(stc_uninstall(&in, 0) == 0);                       /* application uninstall: data untouched */
+        _snwprintf(f, MAX_PATH, L"%ls\\data.db", data);
+        assert(exists(f) && exists(other));
+
+        assert(stc_install(&in, src) == 0);
+        assert(stc_uninstall(&in, 1) == 0);                       /* clean uninstall */
+        for (k = 0; k < 4; k++) {
+            _snwprintf(f, MAX_PATH, L"%ls\\%ls", data, mine[k]);
+            assert(!exists(f));
+        }
+        assert(exists(other));                                    /* a file we did not create is never deleted */
+        assert(exists(data));                                     /* so the folder stays */
+        DeleteFileW(other);
+        RemoveDirectoryW(data);
+        SetEnvironmentVariableW(L"STC_DATA_DIR", NULL);
+    }
     SHDeleteKeyW(HKEY_CURRENT_USER, L"Software\\screen-time-cli-test"); /* tidy the test subtree */
     puts("install tests passed");
     return 0;

@@ -348,13 +348,26 @@ int stc_uninstall(const stc_inst *i, int purge)
         _snwprintf(cmd, MAX_PATH * 2, L"ping -n 3 127.0.0.1 >nul & rmdir /s /q \"%ls\"", i->dir);
         run_hidden_cmd(cmd);
     }
-    if (purge) {
+    if (purge) { /* clean uninstall: delete only files this program created, then the folder if now empty */
         char d8[MAX_PATH * 3];
-        wchar_t d[MAX_PATH];
-        if (!stc_data_dir(d8, sizeof d8) && MultiByteToWideChar(CP_UTF8, 0, d8, -1, d, MAX_PATH) && leaf_is_app(d)) {
-            _snwprintf(cmd, MAX_PATH * 2, L"ping -n 3 127.0.0.1 >nul & rmdir /s /q \"%ls\"", d);
-            run_hidden_cmd(cmd);
-        } else puts("purge skipped: data dir is not the default location");
+        wchar_t d[MAX_PATH], pat[MAX_PATH + 16];
+        static const wchar_t *patterns[] = { L"data.db*", L"config.ini" };
+        if (!stc_data_dir(d8, sizeof d8) && MultiByteToWideChar(CP_UTF8, 0, d8, -1, d, MAX_PATH)) {
+            for (k = 0; k < 2; k++) {
+                WIN32_FIND_DATAW fd;
+                HANDLE h;
+                _snwprintf(pat, MAX_PATH + 16, L"%ls\\%ls", d, patterns[k]);
+                h = FindFirstFileW(pat, &fd);
+                if (h == INVALID_HANDLE_VALUE) continue;
+                do {
+                    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                    _snwprintf(f, MAX_PATH, L"%ls\\%ls", d, fd.cFileName);
+                    DeleteFileW(f);
+                } while (FindNextFileW(h, &fd));
+                FindClose(h);
+            }
+            RemoveDirectoryW(d); /* fails (kept) if the user put other files there */
+        }
     }
     return 0;
 }

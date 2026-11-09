@@ -1,8 +1,5 @@
 #include "stc.h"
 
-#define STC_STR2(x) #x
-#define STC_STR(x) STC_STR2(x)
-
 time_t stc_day_start(time_t t, int days)
 {
     struct tm tm = *localtime(&t);

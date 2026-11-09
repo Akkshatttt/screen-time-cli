@@ -8,7 +8,7 @@ MinGW gcc: `mingw32-make all test`. Produces `build/screen-time-cli.exe` and `bu
 
 ## Install (per user, no admin)
 `build\screen-time-cli.exe install` copies both exes to `%LOCALAPPDATA%\Programs\screen-time-cli`, adds it to your user
-PATH, starts the daemon at logon, and lists the app in Settings > Apps. `screen-time-cli uninstall [--purge]` removes it.
+PATH, starts the daemon at logon, and lists the app in Settings > Apps. `screen-time-cli uninstall` removes the application and keeps your data; `uninstall --clean` removes everything.
 
 ## Upgrading
 Build or download the new version, then run `install` from it. The old files are kept until the new daemon is confirmed
@@ -19,12 +19,28 @@ touched by upgrades. Databases are migrated in place after a backup (`data.db.ba
 | Command | Does |
 |---|---|
 | `status` | daemon state and last recorded window |
-| `today` / `week` / `month` | per-app time (active and passive) |
+| `report` (`today` / `week` / `month`) | per-app time with bars and trends. Options: `--days N`, `--app NAME`, `--by category`, `--top N`, `--json` |
+| `heatmap` | weekday x hour-of-day usage grid |
+| `trends` | this period vs the previous one, weekly rhythm, late-night share |
+| `focus` | sessions, breaks, longest single-app blocks, focus score |
+| `switches` | app switching rate, by hour, most common hops |
+| `topics` | time by topic from window titles |
 | `start` / `stop` / `pause` / `resume` | control the daemon |
-| `install` / `uninstall [--purge]` | per-user install and removal |
+| `install` | per-user install or in-place upgrade |
+| `uninstall` | remove the application, keep your data (asks y/N; `--yes` skips) |
+| `uninstall --clean` | also delete all data: database, backups, `config.ini` |
 | `doctor [--fix]` | check the installation, optionally repair it |
 | `check-update` | ask GitHub whether a newer release exists (never installs) |
 | `version` | print version |
+
+Output is colored with Unicode bars in a console and plain ASCII when piped; set `NO_COLOR` to turn color off. Every
+report takes `--json` for scripts. Categories and topics come from `config.ini` in the data folder, for example:
+
+    [categories]
+    Work=Code.exe,WINWORD.EXE
+    [topics]
+    YouTube=youtube
+    Mail=gmail|outlook
 
 Time is split into active (recent input), passive (no input but fullscreen or audio playing) and away (idle 10 min,
 locked, asleep; not counted). Optional `config.ini` in the data folder: `[tracking]` `active_seconds`, `away_seconds`,

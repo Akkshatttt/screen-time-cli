@@ -2,7 +2,7 @@
 #ifndef STC_H
 #define STC_H
 
-#define STC_VERSION "0.2.1"
+#define STC_VERSION "0.3.0"
 #define STC_SCHEMA 1   /* database schema version (PRAGMA user_version); bump with a migration in db.c */
 
 #include <time.h>
@@ -55,5 +55,27 @@ typedef void (*stc_app_cb)(void *ctx, const char *name, long active_s, long pass
 int stc_per_app(sqlite3 *db, time_t from, time_t to, stc_app_cb cb, void *ctx);
 /* Seconds-based local midnight of the day containing t (+ days offset). */
 time_t stc_day_start(time_t t, int days);
+
+
+/* ---- scan.c: one streaming pass over spans, shared by every report ---- */
+#define STC_STR2(x) #x
+#define STC_STR(x) STC_STR2(x)
+typedef struct {
+    time_t start, end;      /* clipped to the scanned range */
+    int state;              /* STC_ACTIVE / STC_PASSIVE / STC_AWAY */
+    sqlite3_int64 exe, title_id;
+    const char *name;       /* exe file name */
+    const char *title;      /* NULL unless want_title */
+} stc_seg;
+typedef void (*stc_seg_cb)(void *ctx, const stc_seg *s);
+int stc_scan(sqlite3 *db, time_t from, time_t to, int want_title, stc_seg_cb cb, void *ctx);
+
+/* ---- config.c: user rules in config.ini (read only) ---- */
+typedef struct { char key[48]; char val[200]; } stc_kv;
+int stc_cfg_section(const char *section, stc_kv *out, int max);
+const char *stc_stristr(const char *haystack, const char *needle);
+const char *stc_category(const char *exe_name);          /* config [categories] or built-in defaults; "Other" */
+const stc_kv *stc_topics(int *n);                         /* config [topics] or built-in defaults */
+int stc_topic_of(const char *title, const stc_kv *rules, int n);
 
 #endif

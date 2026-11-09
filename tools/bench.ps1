@@ -66,7 +66,7 @@ foreach ($y in 0.1, 1, 5) {
     Remove-Item "$db\*" -Force -ErrorAction SilentlyContinue
     Push-Location $root; $gen = & python -I tools/gen_db.py "$db\data.db" $y; Pop-Location
     $env:STC_DATA_DIR = $db
-    foreach ($cmd in 'today', 'week', 'month') {
+    foreach ($cmd in 'today', 'week', 'month', 'heatmap', 'trends', 'focus', 'switches', 'topics') {
         $t = Measure-Command { & $cli $cmd | Out-Null }
         Say ("- {0}y data ({1}): {2} -> {3:N0} ms" -f $y, $gen, $cmd, $t.TotalMilliseconds)
         if ($cmd -eq 'today' -and $t.TotalMilliseconds -gt $BUD_TODAY_MS) { $fail += "today on ${y}y data $([math]::Round($t.TotalMilliseconds)) ms > $BUD_TODAY_MS" }
