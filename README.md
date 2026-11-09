@@ -3,6 +3,14 @@
 Tiny terminal-only screen-time tracker for Windows. A hidden background daemon records the foreground app and window
 title (event driven, near-zero CPU) into a local SQLite file; the CLI reads it. Nothing leaves the machine.
 
+**Install without cloning**, paste into PowerShell (no admin needed):
+
+```powershell
+irm https://raw.githubusercontent.com/Akkshatttt/screen-time-cli/main/install.ps1 | iex
+```
+
+Then open a new terminal and run `screen-time-cli today`.
+
 <p align="center"><img src="assets/icons/png/screen-time-cli-128.png" alt="screen-time-cli icon" width="96"></p>
 
 ## Screenshots

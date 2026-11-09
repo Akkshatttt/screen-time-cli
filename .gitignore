@@ -20,3 +20,5 @@ CLAUDE.md
 buildhb_test/
 =ro
 graphify-out/
+
+dist/
