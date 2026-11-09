@@ -14,7 +14,10 @@ static void bad(const char *msg) { printf(" %s%s%s %s\n", K(K_BAD), rd_unicode ?
 
 static int signal_daemon(const wchar_t *name, const char *what)
 {
-    HANDLE h = OpenEventW(EVENT_MODIFY_STATE, FALSE, name);
+    wchar_t nm[64];
+    HANDLE h;
+    stc_obj_name(nm, 64, name);
+    h = OpenEventW(EVENT_MODIFY_STATE, FALSE, nm);
     if (!h) { bad("daemon is not running (start it with: screen-time-cli start)"); return 1; }
     SetEvent(h);
     CloseHandle(h);
@@ -130,13 +133,16 @@ static int cmd_status(sqlite3 *db)
     if (stc_meta_get(db, "daemon_version", dv, sizeof dv) && strcmp(dv, STC_VERSION))
         printf("   %swarning: daemon is %s, this CLI is %s. Run: screen-time-cli stop, then start%s\n", K(K_UP), dv, STC_VERSION, K(K_RESET));
 
-    if (!sqlite3_prepare_v2(db, "SELECT e.name, t.text, s.state, s.start_ts, s.end_ts FROM span s"
+    if (!sqlite3_prepare_v2(db, "SELECT e.name, t.text, s.state, s.start_ts, s.end_ts, s.id FROM span s"
                                 " JOIN exe e ON e.id=s.exe_id JOIN title t ON t.id=s.title_id"
                                 " ORDER BY s.id DESC LIMIT 1", -1, &s, 0)) {
         if (sqlite3_step(s) == SQLITE_ROW) {
             int st = sqlite3_column_int(s, 2) % 3;
             char title[160];
-            hms((long)(sqlite3_column_int64(s, 4) - sqlite3_column_int64(s, 3)), d, sizeof d);
+            time_t end = (time_t)sqlite3_column_int64(s, 4);
+            sqlite3_int64 hid; time_t hts;
+            if (stc_hb_read(&hid, &hts) && hid == sqlite3_column_int64(s, 5) && hts > end) end = hts;   /* live open span */
+            hms((long)(end - sqlite3_column_int64(s, 3)), d, sizeof d);
             printf("\n   %sLast window%s  %s%s%s  %s[%s%s%s for %s]%s\n", K(K_DIM), K(K_RESET), K(K_BOLD),
                    sqlite3_column_text(s, 0), K(K_RESET), K(K_DIM), K(cols[st]), names[st], K(K_DIM), d, K(K_RESET));
             printf("                %s%s%s\n", K(K_DIM), rd_trunc(title, sizeof title, (const char *)sqlite3_column_text(s, 1), rd_width - 20),

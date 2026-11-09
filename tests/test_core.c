@@ -97,6 +97,27 @@ int main(void)
     assert(stc_tr_update(&t, 10000 + STC_MAX_SPAN, e1, t1, STC_ACTIVE) == 1);
 
     sqlite3_close(db);
+    /* storm detection: 15 events in 3 s are fine, the 16th trips it; backoff doubles up to a cap; slow events never trip */
+    {
+        stc_storm st;
+        int i, tripped = 0;
+        unsigned ms;
+        stc_storm_reset(&st);
+        for (i = 0; i < 15; i++) assert(stc_storm_event(&st, 1000 + i * 100) == 0);
+        assert(stc_storm_event(&st, 2600) == 1);
+        assert(stc_storm_backoff_ms(&st) == 30000 && stc_storm_backoff_ms(&st) == 60000);
+        for (i = 0; i < 6; i++) ms = stc_storm_backoff_ms(&st);
+        assert(ms == 480000);                                   /* capped */
+        stc_storm_calm(&st);
+        assert(stc_storm_backoff_ms(&st) == 30000);
+        stc_storm_reset(&st);
+        for (i = 0; i < 200; i++) tripped |= stc_storm_event(&st, 1000u + i * 1000u);   /* 1 event/s: never a storm */
+        assert(!tripped);
+        stc_storm_reset(&st);
+        for (i = 0; i < 15; i++) stc_storm_event(&st, 0xFFFFFF00u + i * 30u);          /* tick counter wraps mid-window */
+        assert(stc_storm_event(&st, 0x100u) == 1);
+        assert(stc_probe_due(1000, 0, 60) == 1 && stc_probe_due(1030, 1000, 60) == 0 && stc_probe_due(1058, 1000, 60) == 1);
+    }
     assert(stc_ver_cmp("0.2.1", "0.3.0") < 0 && stc_ver_cmp("v1.0.0", "0.9.9") > 0);
     assert(stc_ver_cmp("0.10.0", "0.9.0") > 0 && stc_ver_cmp("v0.2.1", "0.2.1") == 0);
     test_migrate();

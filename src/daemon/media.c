@@ -1,6 +1,7 @@
 /* Media signals for "passive" time: fullscreen window, or foreground app playing audio.
  * MinGW 6.3 ships no WASAPI headers, so the few COM vtable slots we use are declared by hand.
- * Only called when the user has been idle, so the COM cost is paid rarely. */
+ * ole32 and the audio DLLs are loaded only for the duration of a probe and unloaded right after, so the idle daemon
+ * does not carry them (about 4 MB of working set). The probe runs at most once per heartbeat, and only while idle. */
 #include "../core/wincompat.h"
 #include <string.h>
 #include "media.h"
@@ -29,7 +30,10 @@ typedef HRESULT (STDMETHODCALLTYPE *F_getsess)(void *, int, Obj **);
 typedef HRESULT (STDMETHODCALLTYPE *F_getpid)(void *, DWORD *);
 typedef HRESULT (STDMETHODCALLTYPE *F_peak)(void *, float *);
 
-static int g_com;
+typedef HRESULT (WINAPI *F_coinit)(void *, DWORD);
+typedef void (WINAPI *F_couninit)(void);
+typedef HRESULT (WINAPI *F_cocreate)(const GUID *, void *, DWORD, const GUID *, void **);
+typedef HRESULT (WINAPI *F_cofree)(DWORD, DWORD);
 
 static int same_exe(DWORD pid, const wchar_t *fg)
 {
@@ -46,10 +50,23 @@ static int same_exe(DWORD pid, const wchar_t *fg)
 int stc_audio_playing(const wchar_t *fg_exe)
 {
     Obj *en = NULL, *dev = NULL, *mgr = NULL, *se = NULL;
-    int count = 0, i, playing = 0;
+    int count = 0, i, playing = 0, inited = 0;
+    HMODULE ole = LoadLibraryW(L"ole32.dll");
+    F_coinit CoInit;
+    F_couninit CoUninit;
+    F_cocreate CoCreate;
+    F_cofree CoFree;
 
-    if (!g_com) { CoInitializeEx(NULL, COINIT_APARTMENTTHREADED); g_com = 1; }
-    if (CoCreateInstance(&CLSID_Enum, NULL, CLSCTX_ALL, &IID_Enum, (void **)&en)) return 0;
+    if (!ole) return 0;
+    CoInit = (F_coinit)GetProcAddress(ole, "CoInitializeEx");
+    CoUninit = (F_couninit)GetProcAddress(ole, "CoUninitialize");
+    CoCreate = (F_cocreate)GetProcAddress(ole, "CoCreateInstance");
+    CoFree = (F_cofree)GetProcAddress(ole, "CoFreeUnusedLibrariesEx");
+    if (!CoInit || !CoUninit || !CoCreate) { FreeLibrary(ole); return 0; }
+
+    inited = CoInit(NULL, COINIT_APARTMENTTHREADED) >= 0;
+    if (!inited) { FreeLibrary(ole); return 0; }
+    if (CoCreate(&CLSID_Enum, NULL, CLSCTX_ALL, &IID_Enum, (void **)&en)) goto out;
     if (((F_defep)en->v->m[1])(en, 0 /*eRender*/, 1 /*eMultimedia*/, &dev)) goto out;
     if (((F_activate)dev->v->m[0])(dev, &IID_Mgr2, CLSCTX_ALL, NULL, (void **)&mgr)) goto out;
     if (((F_getenum)mgr->v->m[2])(mgr, &se)) goto out;
@@ -68,6 +85,9 @@ int stc_audio_playing(const wchar_t *fg_exe)
     }
 out:
     REL(se); REL(mgr); REL(dev); REL(en);
+    if (CoFree) CoFree(0, 0);           /* unload mmdevapi/audioses now, not after COM's 10 minute delay */
+    CoUninit();
+    FreeLibrary(ole);
     return playing;
 }
 

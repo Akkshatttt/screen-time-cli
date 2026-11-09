@@ -2,6 +2,13 @@
 
 Semantic versioning, still 0.x: the minor number grows with features and the patch number with fixes. 1.0.0 is for when the core planned features exist.
 
+## 0.3.1 (2026-11-09)
+- Daemon memory cut: working set 9.3 MB -> about 0.6 MB, private working set 1.0 MB -> about 0.2 MB (measured on the same machine). Shared Windows DLLs no longer sit in its working set (periodic trim), ole32/COM and the audio DLLs are loaded only for the duration of an audio probe, the text-services framework is not loaded, SQLite lookaside is off and its cache is 64 KB, and the daemon links a trimmed SQLite (exe 732 -> 583 KB).
+- Heartbeats no longer write to the database: the daemon overwrites a 24-byte `hb.bin` once per beat; reports and `status` overlay it on the open span, and a restart applies it after a crash. Default heartbeat is now 60 s.
+- Animated window titles: name-change events are counted, and the daemon stops listening for 30 s, doubling to 8 min while the storm continues. Per-event timer calls removed. Exe, title and span rows share one transaction per change; statements are prepared once; WAL checkpoints every 128 pages.
+- The audio probe runs at most once per heartbeat, only while idle.
+- Bench: measures the installed daemon in place or a sandboxed second daemon (`-Own`, `-Profile`, `STC_NS`), reports working set, private working set, private bytes, exact CPU from the cycle counter, disk writes per span change, and per-minute event counts. `make profile` builds the counting daemon.
+
 ## 0.3.0 (2026-11-09)
 - New readable terminal output: bold title with a rule, dim section rules, 16-color stacked bars (solid = active, shaded = passive), trend arrows, sparklines and a weekday x hour heatmap. Unicode and color when the output is a console; plain ASCII and no color when piped or when `NO_COLOR` is set (`FORCE_COLOR` forces Unicode when piping).
 - New commands: `report` (with `--days N`, `--app NAME`, `--by category`, `--top N`, `--json`), `heatmap`, `trends`, `focus`, `switches`, `topics`. `today`, `week`, `month` are shortcuts for `report`. Every command supports `--json` with a `"schema": 1` field.

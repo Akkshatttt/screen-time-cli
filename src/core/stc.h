@@ -2,10 +2,11 @@
 #ifndef STC_H
 #define STC_H
 
-#define STC_VERSION "0.3.0"
+#define STC_VERSION "0.3.1"
 #define STC_SCHEMA 1   /* database schema version (PRAGMA user_version); bump with a migration in db.c */
 
 #include <time.h>
+#include <stddef.h>
 #include "../../vendor/sqlite3.h"
 
 enum { STC_ACTIVE = 0, STC_PASSIVE = 1, STC_AWAY = 2 };
@@ -16,7 +17,17 @@ int stc_classify(unsigned idle_s, int media, int locked, unsigned active_s, unsi
 
 int stc_ver_cmp(const char *a, const char *b);   /* "0.10.0" > "0.9.0"; leading v ignored */
 
+/* ---- sched.c: daemon scheduling rules, pure so they are testable ---- */
+typedef struct { unsigned win_start; int count; int level; int started; } stc_storm;
+void stc_storm_reset(stc_storm *s);
+int stc_storm_event(stc_storm *s, unsigned now_ms);   /* 1 = too many title events: stop listening */
+unsigned stc_storm_backoff_ms(stc_storm *s);          /* how long to stay deaf; doubles on repeated storms */
+void stc_storm_calm(stc_storm *s);
+int stc_probe_due(time_t now_s, time_t last_probe_s, unsigned beat_s);
+
 /* ---- db.c ---- */
+/* Names of the daemon's named kernel objects. STC_NS (env) appends a suffix so a test daemon can run beside the real one. */
+void stc_obj_name(wchar_t *out, size_t cap, const wchar_t *base);
 /* Fills dir with %LOCALAPPDATA%\screen-time-cli (UTF-8) and creates it. Returns 0 on success. */
 int stc_data_dir(char *dir, size_t n);
 /* readonly=1 for the CLI. path NULL = default location. Returns NULL on failure. */
@@ -33,6 +44,14 @@ void stc_meta_set(sqlite3 *db, const char *key, const char *val);
 /* Returns 1 and fills out if key exists. */
 int stc_meta_get(sqlite3 *db, const char *key, char *out, size_t n);
 
+/* ---- hb.c: heartbeat file (open span still alive as of T), overlaid by readers, applied after a crash ---- */
+typedef struct { void *h; } stc_hb;
+int stc_hb_open(stc_hb *h);                                   /* daemon: open for writing; -1 if unavailable */
+void stc_hb_write(stc_hb *h, sqlite3_int64 span, time_t ts);
+void stc_hb_close(stc_hb *h);
+int stc_hb_read(sqlite3_int64 *span, time_t *ts);            /* 1 if an intact record exists */
+int stc_hb_recover(sqlite3 *db, time_t now);                  /* apply it to the database; returns rows changed */
+
 /* ---- span.c: writes a span only when (exe,title,state) changes; otherwise extends end_ts ---- */
 /* Spans never exceed this, so range queries can bound start_ts and use its index. */
 #define STC_MAX_SPAN (6 * 3600)
@@ -43,11 +62,14 @@ typedef struct {
     int state;
     long min_extend;   /* seconds: skip heartbeat writes more often than this (0 = always write) */
     time_t last_write, start;
+    sqlite3_stmt *st_ext, *st_ins;   /* prepared once, reused */
+    stc_hb *hb;                      /* optional: heartbeats go here instead of into the database */
 } stc_tracker;
 void stc_tr_init(stc_tracker *t, sqlite3 *db);
 /* Returns 1 if a new span was started, 0 if the open one was extended. */
 int stc_tr_update(stc_tracker *t, time_t now, sqlite3_int64 exe, sqlite3_int64 title, int state);
 void stc_tr_close(stc_tracker *t, time_t now);
+void stc_tr_free(stc_tracker *t);   /* finalize cached statements; call before sqlite3_close */
 
 /* ---- query.c ---- */
 typedef void (*stc_app_cb)(void *ctx, const char *name, long active_s, long passive_s);

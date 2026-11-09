@@ -117,6 +117,45 @@ static void test_switches(void)
     sqlite3_close(db);
 }
 
+static long g_seg_end;
+static void grab_end(void *ctx, const stc_seg *s) { (void)ctx; g_seg_end = (long)s->end; }
+
+/* The daemon heartbeats into hb.bin instead of the database: readers overlay it, a restart applies it. */
+static void test_heartbeat_file(void)
+{
+    sqlite3 *db = mkdb();
+    stc_hb hb;
+    sqlite3_int64 id = 0;
+    time_t ts = 0;
+    HANDLE f;
+    DWORD n;
+    CreateDirectoryW(L"build\\hb_test", NULL);
+    SetEnvironmentVariableW(L"STC_DATA_DIR", L"build\\hb_test");
+    DeleteFileW(L"build\\hb_test\\hb.bin");
+    assert(!stc_hb_read(&id, &ts));                         /* no file yet */
+    add(db, 1000, 1000, 1, STC_ACTIVE);                     /* open span: end == start */
+    assert(stc_hb_open(&hb) == 0);
+    stc_hb_write(&hb, 1, 1500);
+    assert(stc_hb_read(&id, &ts) && id == 1 && ts == 1500);
+    g_seg_end = 0;
+    stc_scan(db, 0, 5000, 0, grab_end, NULL);
+    assert(g_seg_end == 1500);                              /* reports see the live end of the open span */
+    assert(stc_hb_recover(db, 400) == 0);                   /* heartbeat from the future is ignored */
+    assert(stc_hb_recover(db, 2000) == 1);                  /* after a crash it is written back */
+    g_seg_end = 0;
+    stc_hb_close(&hb);
+    DeleteFileW(L"build\\hb_test\\hb.bin");
+    stc_scan(db, 0, 5000, 0, grab_end, NULL);
+    assert(g_seg_end == 1500);                              /* ... and survives losing the file */
+    f = CreateFileW(L"build\\hb_test\\hb.bin", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    WriteFile(f, "garbage garbage garbage garbage", 31, &n, NULL);
+    CloseHandle(f);
+    assert(!stc_hb_read(&id, &ts));                         /* torn or foreign file is rejected */
+    DeleteFileW(L"build\\hb_test\\hb.bin");
+    SetEnvironmentVariableW(L"STC_DATA_DIR", NULL);
+    sqlite3_close(db);
+}
+
 static void test_rules_and_args(void)
 {
     int n;
@@ -143,6 +182,7 @@ int main(void)
     test_profile();
     test_focus();
     test_switches();
+    test_heartbeat_file();
     test_rules_and_args();
     puts("insight tests passed");
     return 0;

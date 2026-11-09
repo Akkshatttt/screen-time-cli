@@ -15,3 +15,8 @@ LEARNINGS.md
 FEATURES.md
 CLAUDE.md
 .claude/
+
+# Stray test output and tools output
+buildhb_test/
+=ro
+graphify-out/

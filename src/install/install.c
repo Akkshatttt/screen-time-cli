@@ -34,7 +34,10 @@ void stc_inst_defaults(stc_inst *i)
 /* ---- daemon control ---- */
 int stc_daemon_running(void)
 {
-    HANDLE h = OpenMutexW(SYNCHRONIZE, FALSE, L"Local\\screen-time-daemon");
+    wchar_t nm[64];
+    HANDLE h;
+    stc_obj_name(nm, 64, L"Local\\screen-time-daemon");
+    h = OpenMutexW(SYNCHRONIZE, FALSE, nm);
     if (h) CloseHandle(h);
     return h != NULL;
 }
@@ -42,7 +45,10 @@ int stc_daemon_running(void)
 void stc_daemon_stop(void)
 {
     int n;
-    HANDLE h = OpenEventW(EVENT_MODIFY_STATE, FALSE, L"Local\\screen-time-stop");
+    wchar_t nm[64];
+    HANDLE h;
+    stc_obj_name(nm, 64, L"Local\\screen-time-stop");
+    h = OpenEventW(EVENT_MODIFY_STATE, FALSE, nm);
     if (!h) return;
     SetEvent(h);
     CloseHandle(h);

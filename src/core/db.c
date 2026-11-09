@@ -20,6 +20,14 @@ int stc_data_dir(char *dir, size_t n)
     return WideCharToMultiByte(CP_UTF8, 0, full, -1, dir, (int)n, NULL, NULL) ? 0 : -1;
 }
 
+void stc_obj_name(wchar_t *out, size_t cap, const wchar_t *base)
+{
+    wchar_t ns[32];
+    DWORD n = GetEnvironmentVariableW(L"STC_NS", ns, 32);
+    if (n && n < 32) _snwprintf(out, cap, L"%ls-%ls", base, ns);
+    else _snwprintf(out, cap, L"%ls", base);
+}
+
 /* Ordered, additive migrations: MIGRATIONS[n] takes the schema from version n to n+1.
  * Never edit a shipped entry; append a new one and bump STC_SCHEMA (and add a fixture test). */
 static const char *MIGRATIONS[] = {
@@ -112,8 +120,10 @@ sqlite3 *stc_db_open(const char *path, int readonly)
     sqlite3_busy_timeout(db, 2000);
     if (!readonly) {
         /* small cache: the daemon must stay tiny */
+        /* tiny cache, small WAL: the daemon only ever touches a handful of pages */
         sqlite3_exec(db, "PRAGMA journal_mode=WAL;PRAGMA synchronous=NORMAL;"
-                         "PRAGMA cache_size=-256;PRAGMA temp_store=MEMORY;", 0, 0, 0);
+                         "PRAGMA cache_size=-64;PRAGMA temp_store=MEMORY;PRAGMA mmap_size=0;"
+                         "PRAGMA wal_autocheckpoint=128;PRAGMA journal_size_limit=524288;", 0, 0, 0);
         if (stc_migrate(db, path)) { sqlite3_close(db); return NULL; }
     } else {
         sqlite3_exec(db, "PRAGMA cache_size=-2048;", 0, 0, 0);
