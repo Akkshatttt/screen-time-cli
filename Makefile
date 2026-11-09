@@ -23,7 +23,7 @@ $(B):
 $(B)/sqlite3.o: vendor/sqlite3.c | $(B)
 	$(CC) $(SQLFLAGS) -c $< -o $@
 
-$(B)/%.o: src/core/%.c src/core/stc.h | $(B)
+$(B)/%.o: src/core/%.c src/core/stc.h src/core/version.h | $(B)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # icon + version info resources (Task Manager shows the icon and FileDescription); needs windres from MinGW
@@ -33,7 +33,7 @@ $(B)/app-cli.o: assets/app-cli.rc $(ICON) | $(B)
 $(B)/app-daemon.o: assets/app-daemon.rc $(ICON) | $(B)
 	windres -I assets -O coff $< -o $@
 
-$(B)/install.o: src/install/install.c src/install/install.h src/core/stc.h | $(B)
+$(B)/install.o: src/install/install.c src/install/install.h src/core/stc.h src/core/version.h | $(B)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(B)/screen-time-cli.exe: src/cli/main.c src/cli/update.c src/cli/render.c src/cli/live.c $(INS) $(INSH) $(CORE) $(INST) $(B)/app-cli.o
