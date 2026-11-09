@@ -9,7 +9,6 @@
 #define T_EVAL 1   /* debounced re-evaluation after a foreground change */
 #define T_BEAT 2   /* heartbeat: extends the open span, re-checks idle/media */
 #define T_TITLE 3  /* title settled: animated titles (spinners) keep it pending, so they never record */
-#define T_STORM 4  /* end of a title-event backoff */
 #define TITLE_SETTLE_MS 5000
 #define DEBOUNCE_MS 400
 #define TRIM_EVERY_MS 30000
@@ -29,8 +28,7 @@ static sqlite3_int64 g_title;
 static char g_title_text[256 * 3];
 static HWINEVENTHOOK g_title_hook; /* title events, narrowed to the foreground process */
 
-/* title-event storm handling (animated titles) */
-static stc_storm g_storm;
+/* title settle: one timer, re-armed when it fires early (animated titles keep it pending, so they never record) */
 static DWORD g_last_title_ms;
 static int g_title_armed;
 
@@ -39,7 +37,7 @@ static time_t g_probe_s;
 static int g_media;
 
 #ifdef STC_PROFILE
-static unsigned g_n_fg, g_n_title, g_n_raw, g_n_eval, g_n_beat, g_n_probe, g_n_storm;
+static unsigned g_n_fg, g_n_title, g_n_raw, g_n_eval, g_n_beat, g_n_probe;
 static LONGLONG g_us_eval, g_us_probe;
 static LARGE_INTEGER g_qf;
 static ULONG64 g_cycles0;   /* cost of startup, subtracted from the steady-state figure */
@@ -111,8 +109,6 @@ static void eval(int refresh_title)
             sqlite3_exec(g_db, "BEGIN", 0, 0, 0);   /* exe, title and span rows share one commit */
             began = 1;
             load_exe(pid);
-            stc_storm_reset(&g_storm);          /* a different app starts with a clean slate */
-            KillTimer(g_wnd, T_STORM);
             hook_title(pid);
             g_probe_s = 0;                      /* probe the new app right away if idle */
         }
@@ -158,15 +154,6 @@ static void CALLBACK on_event(HWINEVENTHOOK hk, DWORD ev, HWND h, LONG obj, LONG
     if (ev == EVENT_OBJECT_NAMECHANGE) {
         DWORD now = GetTickCount();
         PROF(g_n_raw++;)
-        /* every name change in the foreground process wakes us (tab titles, hidden windows, controls): count them
-         * all for the storm check, but only the foreground window's own title matters */
-        if (stc_storm_event(&g_storm, now) && g_title_hook) {
-            UnhookWinEvent(g_title_hook);        /* too chatty: go deaf for a while, longer each time */
-            g_title_hook = NULL;
-            SetTimer(g_wnd, T_STORM, stc_storm_backoff_ms(&g_storm), NULL);
-            PROF(g_n_storm++;)
-            return;
-        }
         if (obj != OBJID_WINDOW || child != CHILDID_SELF || h != GetForegroundWindow()) return;
         PROF(g_n_title++;)
         g_last_title_ms = now;                   /* no syscall per event: one timer, re-armed when it fires early */
@@ -183,8 +170,8 @@ static void write_profile(void)
     char buf[400];
     ULONG64 cycles = 0;
     QueryProcessCycleTime(GetCurrentProcess(), &cycles);   /* exact, unlike the 15 ms scheduler tick */
-    snprintf(buf, sizeof buf, "fg=%u title=%u raw=%u storm=%u evals=%u beats=%u probes=%u eval_us=%I64d probe_us=%I64d cycles=%I64u startup_cycles=%I64u",
-             g_n_fg, g_n_title, g_n_raw, g_n_storm, g_n_eval, g_n_beat, g_n_probe, g_us_eval, g_us_probe, (unsigned long long)cycles, (unsigned long long)g_cycles0);
+    snprintf(buf, sizeof buf, "fg=%u title=%u raw=%u evals=%u beats=%u probes=%u eval_us=%I64d probe_us=%I64d cycles=%I64u startup_cycles=%I64u",
+             g_n_fg, g_n_title, g_n_raw, g_n_eval, g_n_beat, g_n_probe, g_us_eval, g_us_probe, (unsigned long long)cycles, (unsigned long long)g_cycles0);
     stc_meta_set(g_db, "profile", buf);
 }
 #endif
@@ -196,7 +183,6 @@ static LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         if (wp == T_BEAT) {
             PROF(g_n_beat++;)
             eval(0);
-            if (GetTickCount() - g_last_title_ms > 300000) stc_storm_calm(&g_storm);
             PROF(write_profile();)
             trim();
         } else if (wp == T_TITLE) {
@@ -208,9 +194,6 @@ static LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
             KillTimer(w, T_TITLE);
             g_title_armed = 0;
             eval(1);
-        } else if (wp == T_STORM) {
-            KillTimer(w, T_STORM);
-            if (g_pid) hook_title(g_pid);        /* listen again; a continuing storm trips the backoff again */
         } else {
             KillTimer(w, T_EVAL);
             eval(1);
@@ -287,7 +270,6 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE prev, LPSTR cmd, int show)
     stc_hb_recover(g_db, time(NULL));                   /* a crash left the open span's end_ts stale */
     stc_tr_init(&g_tr, g_db);
     if (!stc_hb_open(&g_hb)) g_tr.hb = &g_hb;
-    stc_storm_reset(&g_storm);
     PROF(QueryPerformanceFrequency(&g_qf);)
 
     disable_ime();

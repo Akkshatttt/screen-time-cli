@@ -1,0 +1,3 @@
+#define STC_FILEDESC "screen-time-cli"
+#define STC_FILENAME "screen-time-cli.exe"
+#include "app.rc"

@@ -1,0 +1,34 @@
+/* Windows resources shared by both exes: the icon (Task Manager, Settings > Apps, Explorer) and version info
+ * (Task Manager shows FileDescription as the app name). Wrapped by app-cli.rc and app-daemon.rc. */
+#include <winver.h>
+#include "../src/core/version.h"
+
+1 ICON "icons/ico/screen-time-cli.ico"
+
+1 VERSIONINFO
+FILEVERSION STC_VER_MAJOR,STC_VER_MINOR,STC_VER_PATCH,0
+PRODUCTVERSION STC_VER_MAJOR,STC_VER_MINOR,STC_VER_PATCH,0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Akkshatttt"
+            VALUE "FileDescription", STC_FILEDESC
+            VALUE "FileVersion", STC_VERSION
+            VALUE "InternalName", STC_FILENAME
+            VALUE "OriginalFilename", STC_FILENAME
+            VALUE "ProductName", "screen-time-cli"
+            VALUE "ProductVersion", STC_VERSION
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

@@ -2,7 +2,7 @@
 #ifndef STC_H
 #define STC_H
 
-#define STC_VERSION "0.3.1"
+#include "version.h"
 #define STC_SCHEMA 1   /* database schema version (PRAGMA user_version); bump with a migration in db.c */
 
 #include <time.h>
@@ -18,11 +18,6 @@ int stc_classify(unsigned idle_s, int media, int locked, unsigned active_s, unsi
 int stc_ver_cmp(const char *a, const char *b);   /* "0.10.0" > "0.9.0"; leading v ignored */
 
 /* ---- sched.c: daemon scheduling rules, pure so they are testable ---- */
-typedef struct { unsigned win_start; int count; int level; int started; } stc_storm;
-void stc_storm_reset(stc_storm *s);
-int stc_storm_event(stc_storm *s, unsigned now_ms);   /* 1 = too many title events: stop listening */
-unsigned stc_storm_backoff_ms(stc_storm *s);          /* how long to stay deaf; doubles on repeated storms */
-void stc_storm_calm(stc_storm *s);
 int stc_probe_due(time_t now_s, time_t last_probe_s, unsigned beat_s);
 
 /* ---- db.c ---- */

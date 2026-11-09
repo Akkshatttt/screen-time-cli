@@ -1,0 +1,3 @@
+#define STC_FILEDESC "screen-time-cli background tracker"
+#define STC_FILENAME "screen-time-daemon.exe"
+#include "app.rc"

@@ -2,6 +2,11 @@
 
 Semantic versioning, still 0.x: the minor number grows with features and the patch number with fixes. 1.0.0 is for when the core planned features exist.
 
+## 0.3.2 (2026-11-09)
+- Reverted two 0.3.1 changes that were not needed yet: the title-event backoff (the daemon listens for title changes again at all times; titles are recorded after 5 s of quiet as before) and the trimmed SQLite build (the daemon links the same SQLite as the CLI; exe 583 -> 737 KB). Measured effect on the daemon: none on memory (working set 0.6 MB, private working set 0.18 MB, private bytes 1.3 MB) or CPU.
+- App icon: the supplied artwork is now built into 10 sizes (16 to 256 px, rounded transparent corners, tighter crop for small sizes) under `assets/icons/` (`tools/make_icons.py`), and embedded with version info in both exes, so Task Manager, Settings > Apps and Explorer show it, and Task Manager names the daemon "screen-time-cli background tracker". The single version source is now `src/core/version.h`. Exes grow by about 110 KB each.
+- Kept: working-set trim, lazy audio libraries, heartbeat file, one-transaction changes, prepared statements, single armed title timer, probe cadence.
+
 ## 0.3.1 (2026-11-09)
 - Daemon memory cut: working set 9.3 MB -> about 0.6 MB, private working set 1.0 MB -> about 0.2 MB (measured on the same machine). Shared Windows DLLs no longer sit in its working set (periodic trim), ole32/COM and the audio DLLs are loaded only for the duration of an audio probe, the text-services framework is not loaded, SQLite lookaside is off and its cache is 64 KB, and the daemon links a trimmed SQLite (exe 732 -> 583 KB).
 - Heartbeats no longer write to the database: the daemon overwrites a 24-byte `hb.bin` once per beat; reports and `status` overlay it on the open span, and a restart applies it after a crash. Default heartbeat is now 60 s.
