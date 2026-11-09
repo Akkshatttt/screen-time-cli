@@ -5,6 +5,23 @@ title (event driven, near-zero CPU) into a local SQLite file; the CLI reads it. 
 
 <p align="center"><img src="assets/icons/png/screen-time-cli-128.png" alt="screen-time-cli icon" width="96"></p>
 
+## Screenshots
+The weekly report: time per app with active/passive bars, daily totals and hour of day.
+
+![Weekly usage report](assets/readme-samples/weekly-usage%20window.png)
+
+The weekday x hour heatmap shows when you are at the screen.
+
+![Usage heatmap](assets/readme-samples/heatmap-window.png)
+
+App switching: how fragmented your attention is, by hour, and the most common hops.
+
+![App switching](assets/readme-samples/switches-window.png)
+
+Every command and option:
+
+![Command list](assets/readme-samples/cli-command-options.png)
+
 ## Build
 MinGW gcc: `mingw32-make all test`. Produces `build/screen-time-cli.exe` and `build/screen-time-daemon.exe`.
 
