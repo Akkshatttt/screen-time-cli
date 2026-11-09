@@ -8,6 +8,7 @@ SQLFLAGS = -Os -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAU
 B = build
 
 CORE = $(B)/db.o $(B)/span.o $(B)/state.o $(B)/query.o $(B)/sqlite3.o
+INST = $(B)/install.o
 
 all: $(B)/screen-time-cli.exe $(B)/screen-time-daemon.exe
 
@@ -20,8 +21,11 @@ $(B)/sqlite3.o: vendor/sqlite3.c | $(B)
 $(B)/%.o: src/core/%.c src/core/stc.h | $(B)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(B)/screen-time-cli.exe: src/cli/main.c $(CORE)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+$(B)/install.o: src/install/install.c src/install/install.h src/core/stc.h | $(B)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(B)/screen-time-cli.exe: src/cli/main.c $(CORE) $(INST)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) -lshlwapi
 
 $(B)/screen-time-daemon.exe: src/daemon/main.c src/daemon/media.c $(CORE)
 	$(CC) $(CFLAGS) -mwindows $^ -o $@ $(LDFLAGS) -lole32 -luuid -lwtsapi32
@@ -29,8 +33,12 @@ $(B)/screen-time-daemon.exe: src/daemon/main.c src/daemon/media.c $(CORE)
 $(B)/test_core.exe: tests/test_core.c $(CORE)
 	$(CC) $(CFLAGS) $^ -o $@
 
-test: $(B)/test_core.exe
+$(B)/test_registry.exe: tests/test_registry.c $(CORE) $(INST)
+	$(CC) $(CFLAGS) $^ -o $@ -lshlwapi
+
+test: $(B)/test_core.exe $(B)/test_registry.exe all
 	$(B)/test_core.exe
+	$(B)/test_registry.exe
 
 bench:
 	powershell -NoProfile -ExecutionPolicy Bypass -File tools/bench.ps1

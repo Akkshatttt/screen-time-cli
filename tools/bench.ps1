@@ -53,14 +53,7 @@ $s = Summarize "steady state" $a $b $samples
 if ($s.Priv -gt $BUD_RAM_MB) { $fail += "daemon private bytes $([math]::Round($s.Priv,2)) MB > $BUD_RAM_MB" }
 if ($s.Cpu -gt $BUD_CPU) { $fail += "daemon CPU $([math]::Round($s.Cpu,3))% > $BUD_CPU" }
 
-# event storm: open and close notepads, which flips the foreground window repeatedly
-$a = Snap $p; $samples = @($a)
-for ($i = 0; $i -lt 20; $i++) {
-    $n = Start-Process (Join-Path $env:windir 'System32\notepad.exe') -PassThru; Start-Sleep -Milliseconds 700
-    $n | Stop-Process -Force; Start-Sleep -Milliseconds 300; $samples += Snap $p
-}
-$b = Snap $p
-$null = Summarize "event storm (20 window switches)" $a $b $samples
+# (no window-switch storm: launching windows is invasive; see FEATURES.md)
 $spans = & python -I -c "import sqlite3;print(sqlite3.connect(r'$data\data.db').execute('select count(*) from span').fetchone()[0])"
 $dbsz = (Get-ChildItem $data -Filter 'data.db*' | Measure-Object Length -Sum).Sum
 Say ("- spans recorded: {0}, DB+WAL size {1:N0} KB" -f $spans, ($dbsz / 1KB))

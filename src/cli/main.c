@@ -4,19 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 #include "../core/stc.h"
+#include "../install/install.h"
 
 static void hms(long s, char *out, size_t n)
 {
     if (s >= 3600) snprintf(out, n, "%ldh %02ldm", s / 3600, s % 3600 / 60);
     else if (s >= 60) snprintf(out, n, "%ldm %02lds", s / 60, s % 60);
     else snprintf(out, n, "%lds", s);
-}
-
-static int daemon_running(void)
-{
-    HANDLE h = OpenMutexW(SYNCHRONIZE, FALSE, L"Local\\screen-time-daemon");
-    if (h) CloseHandle(h);
-    return h != NULL;
 }
 
 static int signal_daemon(const wchar_t *name, const char *what)
@@ -29,26 +23,43 @@ static int signal_daemon(const wchar_t *name, const char *what)
     return 0;
 }
 
+static void exe_dir(wchar_t *dir)
+{
+    wchar_t *slash;
+    GetModuleFileNameW(NULL, dir, MAX_PATH);
+    slash = wcsrchr(dir, L'\\');
+    if (slash) *slash = 0;
+}
+
 static int cmd_start(void)
 {
-    wchar_t exe[MAX_PATH], *slash;
-    STARTUPINFOW si;
-    PROCESS_INFORMATION pi;
-    memset(&si, 0, sizeof si);
-    si.cb = sizeof si;
-    if (daemon_running()) { puts("daemon already running"); return 0; }
-    GetModuleFileNameW(NULL, exe, MAX_PATH);
-    slash = wcsrchr(exe, L'\\');
-    if (!slash) return 1;
-    wcscpy(slash + 1, L"screen-time-daemon.exe");
-    if (!CreateProcessW(exe, NULL, NULL, NULL, FALSE, DETACHED_PROCESS | CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        puts("could not start screen-time-daemon.exe (next to this exe)");
-        return 1;
-    }
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
+    wchar_t dir[MAX_PATH];
+    if (stc_daemon_running()) { puts("daemon already running"); return 0; }
+    exe_dir(dir);
+    if (stc_daemon_start(dir)) { puts("could not start screen-time-daemon.exe (next to this exe)"); return 1; }
     puts("daemon started");
     return 0;
+}
+
+static int cmd_install(int argc, char **argv)
+{
+    stc_inst in;
+    wchar_t src[MAX_PATH];
+    int fix = argc > 2 && !strcmp(argv[2], "--fix");
+    stc_inst_defaults(&in);
+    exe_dir(src);
+    if (!strcmp(argv[1], "install")) {
+        if (stc_install(&in, src)) return 1;
+        stc_daemon_start(in.dir);
+        printf("installed to %ls\nopen a new terminal, then run: screen-time-cli status\n", in.dir);
+        return 0;
+    }
+    if (!strcmp(argv[1], "uninstall")) {
+        stc_uninstall(&in, argc > 2 && !strcmp(argv[2], "--purge"));
+        puts("uninstalled (data kept unless --purge)");
+        return 0;
+    }
+    return stc_doctor(&in, fix, src) ? 1 : 0;
 }
 
 static int cmd_status(sqlite3 *db)
@@ -56,7 +67,7 @@ static int cmd_status(sqlite3 *db)
     sqlite3_stmt *s;
     char paused[8] = "0";
     static const char *names[] = { "active", "passive", "away" };
-    printf("daemon: %s\n", daemon_running() ? "running" : "not running");
+    printf("daemon: %s\n", stc_daemon_running() ? "running" : "not running");
     if (!db) { puts("no data yet"); return 0; }
     if (stc_meta_get(db, "paused", paused, sizeof paused) && paused[0] == '1') puts("tracking: paused");
     if (sqlite3_prepare_v2(db, "SELECT e.name, t.text, s.state, s.start_ts, s.end_ts FROM span s"
@@ -107,7 +118,11 @@ static void usage(void)
          "  start    launch the tracking daemon\n"
          "  stop     stop the daemon\n"
          "  pause    pause tracking\n"
-         "  resume   resume tracking");
+         "  resume   resume tracking\n"
+         "  install  install for this user (PATH, autostart, Settings > Apps)\n"
+         "  uninstall [--purge]  remove (--purge also deletes the data)\n"
+         "  doctor [--fix]  check the installation, optionally repair it\n"
+         "  version  print version");
 }
 
 int main(int argc, char **argv)
@@ -118,6 +133,8 @@ int main(int argc, char **argv)
     int rc = 0;
 
     SetConsoleOutputCP(CP_UTF8);
+    if (!strcmp(c, "version") || !strcmp(c, "--version")) { puts("screen-time-cli " STC_VERSION); return 0; }
+    if (!strcmp(c, "install") || !strcmp(c, "uninstall") || !strcmp(c, "doctor")) return cmd_install(argc, argv);
     if (!strcmp(c, "start")) return cmd_start();
     if (!strcmp(c, "stop")) return signal_daemon(L"Local\\screen-time-stop", "daemon stopping");
     if (!strcmp(c, "pause")) return signal_daemon(L"Local\\screen-time-pause", "tracking paused");

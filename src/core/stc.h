@@ -2,6 +2,8 @@
 #ifndef STC_H
 #define STC_H
 
+#define STC_VERSION "0.2.0"
+
 #include <time.h>
 #include "../../vendor/sqlite3.h"
 
