@@ -17,9 +17,10 @@ function Say($s) { $report.Add($s); Write-Host $s }
 $BUD_RAM_MB = 3.0; $BUD_CPU = 0.05; $BUD_TODAY_MS = 80; $BUD_YEAR_MS = 500
 $fail = @()
 
-Get-Process screen-time-daemon -ErrorAction SilentlyContinue | Stop-Process -Force
+# An installed daemon that is already running is measured in place and never stopped (a second daemon cannot
+# start anyway: single instance). Otherwise the bench starts its own against a throw-away data folder.
+$live = Get-Process screen-time-daemon -ErrorAction SilentlyContinue | Select-Object -First 1
 Remove-Item "$data\*" -Force -ErrorAction SilentlyContinue
-$env:STC_DATA_DIR = $data
 
 Say "# Bench $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
 Say ""
@@ -43,8 +44,16 @@ function Summarize($label, $a, $b, $samples) {
 
 Say ""
 Say "## Daemon"
-$p = Start-Process $dmn -PassThru
-Start-Sleep 3
+if ($live) {
+    $p = $live
+    Say "- measuring the running installed daemon (pid $($p.Id)), not restarting it"
+    $dataDir = Join-Path $env:LOCALAPPDATA 'screen-time-cli'
+} else {
+    $env:STC_DATA_DIR = $data
+    $p = Start-Process $dmn -PassThru
+    Start-Sleep 3
+    $dataDir = $data
+}
 $a = Snap $p; $samples = @($a)
 $end = (Get-Date).AddSeconds($Seconds)
 while ((Get-Date) -lt $end) { Start-Sleep 5; $samples += Snap $p }
@@ -54,10 +63,10 @@ if ($s.Priv -gt $BUD_RAM_MB) { $fail += "daemon private bytes $([math]::Round($s
 if ($s.Cpu -gt $BUD_CPU) { $fail += "daemon CPU $([math]::Round($s.Cpu,3))% > $BUD_CPU" }
 
 # (no window-switch storm: launching windows is invasive; see FEATURES.md)
-$spans = & python -I -c "import sqlite3;print(sqlite3.connect(r'$data\data.db').execute('select count(*) from span').fetchone()[0])"
-$dbsz = (Get-ChildItem $data -Filter 'data.db*' | Measure-Object Length -Sum).Sum
+$spans = & python -I -c "import sqlite3;print(sqlite3.connect(r'file:$dataDir\data.db?mode=ro', uri=True).execute('select count(*) from span').fetchone()[0])"
+$dbsz = (Get-ChildItem $dataDir -Filter 'data.db*' | Measure-Object Length -Sum).Sum
 Say ("- spans recorded: {0}, DB+WAL size {1:N0} KB" -f $spans, ($dbsz / 1KB))
-& $cli stop | Out-Null; Start-Sleep 1
+if (-not $live) { & $cli stop | Out-Null; Start-Sleep 1 }
 
 Say ""
 Say "## CLI on synthetic data"
