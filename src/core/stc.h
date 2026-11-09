@@ -2,7 +2,8 @@
 #ifndef STC_H
 #define STC_H
 
-#define STC_VERSION "0.2.0"
+#define STC_VERSION "0.2.1"
+#define STC_SCHEMA 1   /* database schema version (PRAGMA user_version); bump with a migration in db.c */
 
 #include <time.h>
 #include "../../vendor/sqlite3.h"
@@ -13,12 +14,19 @@ enum { STC_ACTIVE = 0, STC_PASSIVE = 1, STC_AWAY = 2 };
 /* idle_s: seconds since last input. media: fullscreen or foreground app playing audio. */
 int stc_classify(unsigned idle_s, int media, int locked, unsigned active_s, unsigned away_s);
 
+int stc_ver_cmp(const char *a, const char *b);   /* "0.10.0" > "0.9.0"; leading v ignored */
+
 /* ---- db.c ---- */
 /* Fills dir with %LOCALAPPDATA%\screen-time-cli (UTF-8) and creates it. Returns 0 on success. */
 int stc_data_dir(char *dir, size_t n);
 /* readonly=1 for the CLI. path NULL = default location. Returns NULL on failure. */
 sqlite3 *stc_db_open(const char *path, int readonly);
-int stc_schema(sqlite3 *db);
+int stc_schema(sqlite3 *db);                 /* migrate without backup (tests, in-memory) */
+int stc_schema_version(sqlite3 *db);
+/* Brings db up to STC_SCHEMA. path (optional) enables a VACUUM INTO backup before migrating existing data.
+ * Returns 0 ok, 2 if the database is newer than this program, -1 on failure; see stc_db_error(). */
+int stc_migrate(sqlite3 *db, const char *path);
+const char *stc_db_error(void);              /* why the last stc_db_open returned NULL, or "" */
 sqlite3_int64 stc_intern_exe(sqlite3 *db, const char *path, const char *name);
 sqlite3_int64 stc_intern_title(sqlite3 *db, const char *text);
 void stc_meta_set(sqlite3 *db, const char *key, const char *val);

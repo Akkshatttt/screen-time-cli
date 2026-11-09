@@ -2,6 +2,13 @@
 
 Semantic versioning, still 0.x: the minor number grows with features and the patch number with fixes. 1.0.0 is for when the core planned features exist.
 
+## 0.2.1 (2026-11-09)
+- Safe upgrades: `install` over an existing install stages `*.new.exe`, verifies the new CLI runs, swaps with the previous files kept as `*.exe.old`, requires the new daemon to start, and rolls back to the old files (and restarts the old daemon) on any failure. Registry entries are written last.
+- Database schema versioning (`PRAGMA user_version`, ordered additive migrations, `VACUUM INTO` backup `data.db.bak-v<N>` before migrating existing data). A database newer than the program is refused with a clear message instead of being misread.
+- Daemon records its version; `status` and `doctor` warn when daemon and CLI differ; `doctor` reports leftovers and `--fix` cleans them.
+- `check-update`: on demand only, asks the GitHub releases API for a newer version; never downloads or installs.
+- Fix: data file name was built with a bad escape in the new code path; caught by the migration test before release.
+
 ## 0.2.0 (2026-11-09)
 - `install` / `uninstall [--purge]` / `doctor [--fix]`: per-user install in `%LOCALAPPDATA%\Programs\screen-time-cli`, Settings > Apps entry, autostart via HKCU Run, user PATH. No admin. Idempotent; `doctor --fix` restores entries a cleaner removed.
 - `version` command, `README.md`, registry/install tests against a throw-away registry subtree.

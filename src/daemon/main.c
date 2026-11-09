@@ -158,6 +158,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE prev, LPSTR cmd, int show)
     g_db = stc_db_open(NULL, 0);
     if (!g_db) return 1;
     stc_meta_set(g_db, "paused", "0");
+    stc_meta_set(g_db, "daemon_version", STC_VERSION);
     stc_tr_init(&g_tr, g_db);
 
     wc.lpfnWndProc = wndproc;

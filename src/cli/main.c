@@ -5,6 +5,7 @@
 #include <string.h>
 #include "../core/stc.h"
 #include "../install/install.h"
+#include "update.h"
 
 static void hms(long s, char *out, size_t n)
 {
@@ -67,8 +68,11 @@ static int cmd_status(sqlite3 *db)
     sqlite3_stmt *s;
     char paused[8] = "0";
     static const char *names[] = { "active", "passive", "away" };
+    char dv[32] = "";
     printf("daemon: %s\n", stc_daemon_running() ? "running" : "not running");
-    if (!db) { puts("no data yet"); return 0; }
+    if (!db) { puts(stc_db_error()[0] ? stc_db_error() : "no data yet"); return 0; }
+    if (stc_meta_get(db, "daemon_version", dv, sizeof dv) && strcmp(dv, STC_VERSION))
+        printf("warning: daemon is %s, this CLI is %s: run stop, then start\n", dv, STC_VERSION);
     if (stc_meta_get(db, "paused", paused, sizeof paused) && paused[0] == '1') puts("tracking: paused");
     if (sqlite3_prepare_v2(db, "SELECT e.name, t.text, s.state, s.start_ts, s.end_ts FROM span s"
                                " JOIN exe e ON e.id=s.exe_id JOIN title t ON t.id=s.title_id"
@@ -122,6 +126,7 @@ static void usage(void)
          "  install  install for this user (PATH, autostart, Settings > Apps)\n"
          "  uninstall [--purge]  remove (--purge also deletes the data)\n"
          "  doctor [--fix]  check the installation, optionally repair it\n"
+         "  check-update  ask GitHub for a newer release (never installs anything)\n"
          "  version  print version");
 }
 
@@ -135,6 +140,7 @@ int main(int argc, char **argv)
     SetConsoleOutputCP(CP_UTF8);
     if (!strcmp(c, "version") || !strcmp(c, "--version")) { puts("screen-time-cli " STC_VERSION); return 0; }
     if (!strcmp(c, "install") || !strcmp(c, "uninstall") || !strcmp(c, "doctor")) return cmd_install(argc, argv);
+    if (!strcmp(c, "check-update")) return cmd_check_update();
     if (!strcmp(c, "start")) return cmd_start();
     if (!strcmp(c, "stop")) return signal_daemon(L"Local\\screen-time-stop", "daemon stopping");
     if (!strcmp(c, "pause")) return signal_daemon(L"Local\\screen-time-pause", "tracking paused");

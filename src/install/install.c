@@ -182,23 +182,131 @@ static void register_all(const stc_inst *i)
     path_edit(i, 1);
 }
 
+/* final = base.exe, staged = base.new.exe, previous = base.exe.old */
+static const wchar_t *BASES[] = { L"screen-time-cli", L"screen-time-daemon" };
+static void fpath(wchar_t *out, const wchar_t *dir, const wchar_t *base, const wchar_t *ext)
+{
+    _snwprintf(out, MAX_PATH, L"%ls\\%ls%ls", dir, base, ext);
+}
+static int exists(const wchar_t *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
+
+/* Leftovers of an interrupted or just-finished upgrade. The running exe cannot delete its own .old. */
+static int leftovers(const stc_inst *i, int clean)
+{
+    int k, n = 0;
+    wchar_t f[MAX_PATH];
+    for (k = 0; k < 2; k++) {
+        fpath(f, i->dir, BASES[k], L".new.exe");
+        if (exists(f)) { n++; if (clean) DeleteFileW(f); }
+        fpath(f, i->dir, BASES[k], L".exe.old");
+        if (exists(f)) { n++; if (clean && DeleteFileW(f)) n--; }
+    }
+    return n;
+}
+
+/* Runs `<exe> version` with no console output; true if it exits 0 within 5 s. */
+static int runs_ok(const wchar_t *exe)
+{
+    wchar_t cmd[MAX_PATH + 20];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    SECURITY_ATTRIBUTES sa = { sizeof sa, NULL, TRUE };
+    HANDLE nul = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    DWORD code = 1;
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = si.hStdError = nul;
+    si.hStdInput = INVALID_HANDLE_VALUE;
+    _snwprintf(cmd, MAX_PATH + 20, L"\"%ls\" version", exe);
+    if (CreateProcessW(NULL, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        if (WaitForSingleObject(pi.hProcess, 5000) == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
+        else TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
+    return code == 0;
+}
+
+/* Puts the previous files back. had_old[k]: base k had a previous version to restore. */
+static void rollback(const stc_inst *i, const int *had_old, int restart)
+{
+    int k;
+    wchar_t f[MAX_PATH], o[MAX_PATH], n[MAX_PATH];
+    if (i->manage_daemon) stc_daemon_stop();
+    for (k = 0; k < 2; k++) {
+        fpath(f, i->dir, BASES[k], L".exe");
+        fpath(o, i->dir, BASES[k], L".exe.old");
+        fpath(n, i->dir, BASES[k], L".new.exe");
+        if (had_old[k] && exists(o)) MoveFileExW(o, f, MOVEFILE_REPLACE_EXISTING);
+        else if (!had_old[k]) DeleteFileW(f);
+        DeleteFileW(n);
+    }
+    if (restart && i->manage_daemon) stc_daemon_start(i->dir);
+}
+
 int stc_install(const stc_inst *i, const wchar_t *src_dir)
 {
-    static const wchar_t *files[] = { CLI, DMN };
-    int k;
-    if (i->manage_daemon) stc_daemon_stop();
+    int k, had_old[2] = { 0, 0 }, was_running = i->manage_daemon && stc_daemon_running();
+    wchar_t a[MAX_PATH], f[MAX_PATH], n[MAX_PATH], o[MAX_PATH];
+
     mkdirs(i->dir);
-    if (_wcsicmp(src_dir, i->dir))
-        for (k = 0; k < 2; k++) {
-            wchar_t a[MAX_PATH], b[MAX_PATH];
-            _snwprintf(a, MAX_PATH, L"%ls\\%ls", src_dir, files[k]);
-            _snwprintf(b, MAX_PATH, L"%ls\\%ls", i->dir, files[k]);
-            if (!CopyFileW(a, b, FALSE)) {
-                printf("copy failed: %ls (error %lu)\n", a, GetLastError());
+    leftovers(i, 1);
+    if (!_wcsicmp(src_dir, i->dir)) { register_all(i); return 0; } /* repair in place */
+
+    /* 1. stage next to the targets; the running install is untouched until everything is verified */
+    for (k = 0; k < 2; k++) {
+        fpath(a, src_dir, BASES[k], L".exe");
+        fpath(n, i->dir, BASES[k], L".new.exe");
+        if (!CopyFileW(a, n, FALSE)) {
+            printf("upgrade aborted, nothing changed: cannot stage %ls (error %lu)\n", a, GetLastError());
+            leftovers(i, 1);
+            return -1;
+        }
+    }
+    fpath(n, i->dir, BASES[0], L".new.exe");
+    if (!runs_ok(n)) {
+        puts("upgrade aborted, nothing changed: the new screen-time-cli.exe does not run");
+        leftovers(i, 1);
+        return -1;
+    }
+
+    /* 2. swap, keeping the previous files so a failure can restore them */
+    if (i->manage_daemon) stc_daemon_stop();
+    for (k = 0; k < 2; k++) {
+        fpath(f, i->dir, BASES[k], L".exe");
+        fpath(o, i->dir, BASES[k], L".exe.old");
+        fpath(n, i->dir, BASES[k], L".new.exe");
+        if (exists(f)) {
+            if (!MoveFileExW(f, o, MOVEFILE_REPLACE_EXISTING)) {
+                printf("upgrade rolled back: cannot replace %ls (error %lu; is it in use?)\n", f, GetLastError());
+                rollback(i, had_old, was_running);
                 return -1;
             }
+            had_old[k] = 1;
         }
-    register_all(i);
+        if (!MoveFileExW(n, f, MOVEFILE_REPLACE_EXISTING)) {
+            printf("upgrade rolled back: cannot place %ls (error %lu)\n", f, GetLastError());
+            rollback(i, had_old, was_running);
+            return -1;
+        }
+    }
+
+    /* 3. the new daemon must come up (it runs any schema migration on start) */
+    if (i->manage_daemon && was_running) {
+        int t;
+        stc_daemon_start(i->dir);
+        for (t = 0; t < 50 && !stc_daemon_running(); t++) Sleep(100);
+        if (!stc_daemon_running()) {
+            puts("upgrade rolled back: the new daemon did not start");
+            rollback(i, had_old, 1);
+            return -1;
+        }
+    }
+
+    register_all(i); /* entries are written last: they never point at missing files */
+    leftovers(i, 1);
     return 0;
 }
 
@@ -271,11 +379,23 @@ int stc_doctor(const stc_inst *i, int fix, const wchar_t *src_dir)
     path[0] = 0;
     reg_get(i->env, L"Path", path, PATH_CAP);
     CHECK(path_has(path, i->dir), "install dir on user PATH", "doctor --fix");
+    printf("  program   %s, schema v%d\n", STC_VERSION, STC_SCHEMA);
+    CHECK(leftovers(i, 0) == 0, "no interrupted-upgrade leftovers", "doctor --fix cleans them");
     if (i->manage_daemon) {
+        sqlite3 *db = stc_db_open(NULL, 1);
+        char dv[32] = "";
+        if (!db) printf("  note     no database yet%s%s\n", stc_db_error()[0] ? ": " : "", stc_db_error());
+        else {
+            printf("  ok       database schema v%d\n", stc_schema_version(db));
+            if (stc_meta_get(db, "daemon_version", dv, sizeof dv))
+                CHECK(!strcmp(dv, STC_VERSION), "daemon and CLI versions match", "run: screen-time-cli stop, then start");
+            sqlite3_close(db);
+        }
         if (stc_daemon_running()) puts("  ok       daemon running");
         else puts("  note     daemon not running (screen-time-cli start)");
     }
     if (fix && bad) {
+        leftovers(i, 1);
         if (files_ok) register_all(i);
         else stc_install(i, src_dir);
         puts("re-applied registration");

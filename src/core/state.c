@@ -9,3 +9,20 @@ int stc_classify(unsigned idle_s, int media, int locked, unsigned active_s, unsi
     if (media) return STC_PASSIVE;
     return idle_s < away_s ? STC_ACTIVE : STC_AWAY;
 }
+
+/* Compares "x.y.z" strings (a leading v is ignored). Returns <0, 0, >0. */
+int stc_ver_cmp(const char *a, const char *b)
+{
+    int i;
+    if (*a == 'v') a++;
+    if (*b == 'v') b++;
+    for (i = 0; i < 3; i++) {
+        int x = 0, y = 0;
+        while (*a >= '0' && *a <= '9') x = x * 10 + *a++ - '0';
+        while (*b >= '0' && *b <= '9') y = y * 10 + *b++ - '0';
+        if (x != y) return x < y ? -1 : 1;
+        if (*a == '.') a++;
+        if (*b == '.') b++;
+    }
+    return 0;
+}

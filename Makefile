@@ -24,7 +24,7 @@ $(B)/%.o: src/core/%.c src/core/stc.h | $(B)
 $(B)/install.o: src/install/install.c src/install/install.h src/core/stc.h | $(B)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(B)/screen-time-cli.exe: src/cli/main.c $(CORE) $(INST)
+$(B)/screen-time-cli.exe: src/cli/main.c src/cli/update.c $(CORE) $(INST)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) -lshlwapi
 
 $(B)/screen-time-daemon.exe: src/daemon/main.c src/daemon/media.c $(CORE)

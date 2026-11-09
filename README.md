@@ -10,6 +10,11 @@ MinGW gcc: `mingw32-make all test`. Produces `build/screen-time-cli.exe` and `bu
 `build\screen-time-cli.exe install` copies both exes to `%LOCALAPPDATA%\Programs\screen-time-cli`, adds it to your user
 PATH, starts the daemon at logon, and lists the app in Settings > Apps. `screen-time-cli uninstall [--purge]` removes it.
 
+## Upgrading
+Build or download the new version, then run `install` from it. The old files are kept until the new daemon is confirmed
+running and restored automatically if anything fails. Your data lives in `%LOCALAPPDATA%\screen-time-cli` and is never
+touched by upgrades. Databases are migrated in place after a backup (`data.db.bak-v<N>`).
+
 ## Commands
 | Command | Does |
 |---|---|
@@ -18,6 +23,7 @@ PATH, starts the daemon at logon, and lists the app in Settings > Apps. `screen-
 | `start` / `stop` / `pause` / `resume` | control the daemon |
 | `install` / `uninstall [--purge]` | per-user install and removal |
 | `doctor [--fix]` | check the installation, optionally repair it |
+| `check-update` | ask GitHub whether a newer release exists (never installs) |
 | `version` | print version |
 
 Time is split into active (recent input), passive (no input but fullscreen or audio playing) and away (idle 10 min,
