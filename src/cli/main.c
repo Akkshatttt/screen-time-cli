@@ -8,6 +8,7 @@
 #include "insights/ins.h"
 #include "render.h"
 #include "update.h"
+#include "live.h"
 
 static void ok(const char *msg) { printf(" %s%s%s %s\n", K(K_OK), rd_unicode ? "\xe2\x9c\x93" : "ok", K(K_RESET), msg); }
 static void bad(const char *msg) { printf(" %s%s%s %s\n", K(K_BAD), rd_unicode ? "\xe2\x9c\x97" : "x", K(K_RESET), msg); }
@@ -162,6 +163,7 @@ static void usage(void)
     rd_section("Reports and insights");
     for (i = 0; i < N_INSIGHTS; i++) printf("  %s%-13s%s %s%s%s\n", K(K_ACT), INSIGHTS[i].name, K(K_RESET), K(K_DIM), INSIGHTS[i].help, K(K_RESET));
     printf("  %soptions%s    --days N   --app NAME   --top N   --by category   --json\n", K(K_DIM), K(K_RESET));
+    printf("  %s%-13s%s %s%s%s\n", K(K_ACT), "live", K(K_RESET), K(K_DIM), "full-screen window: hotkeys or :command, refreshes every 5 s, q quits", K(K_RESET));
     rd_section("Tracking");
     printf("  %s%-13s%s %s%s%s\n", K(K_ACT), "status", K(K_RESET), K(K_DIM), "daemon state and the last recorded window", K(K_RESET));
     printf("  %s%-13s%s %s%s%s\n", K(K_ACT), "start", K(K_RESET), K(K_DIM), "launch the tracking daemon", K(K_RESET));
@@ -195,7 +197,10 @@ int main(int argc, char **argv)
 
     if (!strcmp(c, "help") || !strcmp(c, "--help") || !strcmp(c, "-h")) { usage(); return 0; }
     db = stc_db_open(NULL, 1);
-    if (!strcmp(c, "status")) rc = cmd_status(db);
+    if (!strcmp(c, "live")) {
+        if (!db) { printf("\n %s%s%s\n\n", K(K_DIM), stc_db_error()[0] ? stc_db_error() : "no data recorded yet (is the daemon running?)", K(K_RESET)); return 1; }
+        rc = cmd_live(db, argc, argv);
+    } else if (!strcmp(c, "status")) rc = cmd_status(db);
     else {
         for (i = 0; i < N_INSIGHTS && strcmp(INSIGHTS[i].name, c); i++) ;
         if (i == N_INSIGHTS) { printf("unknown command: %s\n", c); usage(); rc = 1; }

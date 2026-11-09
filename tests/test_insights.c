@@ -6,6 +6,7 @@
 #include <windows.h>
 #include "../src/cli/insights/ins.h"
 #include "../src/cli/render.h"
+#include "../src/cli/live.h"
 
 static time_t at(int y, int mo, int d, int h, int mi, int s)
 {
@@ -176,8 +177,29 @@ static void test_rules_and_args(void)
     assert(args_parse(2, argv, 2, 7, &a) == 0 && a.days == 7);
 }
 
+static void test_live_helpers(void)
+{
+    char line[] = "  report   --days 14\t--app chrome ";
+    char *tok[16];
+    int i, n = live_split(line, tok, 16);
+    assert(n == 5 && !strcmp(tok[0], "report") && !strcmp(tok[1], "--days") && !strcmp(tok[4], "chrome"));
+    { char one[] = "a b c d"; assert(live_split(one, tok, 2) == 2); }
+    { char none[] = "   "; assert(live_split(none, tok, 16) == 0); }
+    assert(!strcmp(live_key_view('t'), "today") && !strcmp(live_key_view('r'), "report"));
+    assert(live_key_view('z') == NULL && live_key_view(':') == NULL && live_key_view('q') == NULL);
+    /* every hotkey names a real insight */
+    for (i = 0; i < 128; i++) {
+        const char *v = live_key_view(i);
+        int j;
+        if (!v) continue;
+        for (j = 0; j < N_INSIGHTS && strcmp(INSIGHTS[j].name, v); j++) ;
+        assert(j < N_INSIGHTS);
+    }
+}
+
 int main(void)
 {
+    test_live_helpers();
     test_render();
     test_profile();
     test_focus();

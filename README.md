@@ -27,6 +27,7 @@ touched by upgrades. Databases are migrated in place after a backup (`data.db.ba
 | `focus` | sessions, breaks, longest single-app blocks, focus score |
 | `switches` | app switching rate, by hour, most common hops |
 | `topics` | time by topic from window titles |
+| `live [view]` | full-screen window; each view replaces the last and refreshes every 5 s. Keys: `t` today, `r` report, `w` week, `m` month, `h` heatmap, `e` trends, `f` focus, `s` switches, `o` topics, space refresh, `:` command line (e.g. `:report --days 14 --app chrome`), `q` quit. Your shell screen is restored on exit |
 | `start` / `stop` / `pause` / `resume` | control the daemon |
 | `install` | per-user install or in-place upgrade |
 | `uninstall` | remove the application, keep your data (asks y/N; `--yes` skips) |

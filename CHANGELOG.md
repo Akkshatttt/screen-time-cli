@@ -2,6 +2,9 @@
 
 Semantic versioning, still 0.x: the minor number grows with features and the patch number with fixes. 1.0.0 is for when the core planned features exist.
 
+## 0.4.0 (2026-11-09)
+- New `live` command: a full-screen window on the terminal's alternate screen. Hotkeys (t, r, w, m, h, e, f, s, o) or a `:` command line switch views; each view replaces the previous one in place and refreshes every 5 s; `q` or Ctrl+C returns to the shell exactly as it was. Needs a console (refuses when piped). One-shot commands and `--json` output are unchanged. No schema change, no new dependency (about 150 lines in `src/cli/live.c`).
+
 ## 0.3.2 (2026-11-09)
 - Reverted two 0.3.1 changes that were not needed yet: the title-event backoff (the daemon listens for title changes again at all times; titles are recorded after 5 s of quiet as before) and the trimmed SQLite build (the daemon links the same SQLite as the CLI; exe 583 -> 737 KB). Measured effect on the daemon: none on memory (working set 0.6 MB, private working set 0.18 MB, private bytes 1.3 MB) or CPU.
 - App icon: the supplied artwork is now built into 10 sizes (16 to 256 px, rounded transparent corners, tighter crop for small sizes) under `assets/icons/` (`tools/make_icons.py`), and embedded with version info in both exes, so Task Manager, Settings > Apps and Explorer show it, and Task Manager names the daemon "screen-time-cli background tracker". The single version source is now `src/core/version.h`. Exes grow by about 110 KB each.
