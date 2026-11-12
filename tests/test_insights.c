@@ -1,6 +1,7 @@
 /* Render primitives (ASCII mode) and the numeric core of each insight, on hand-built spans in memory. */
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <windows.h>
@@ -197,8 +198,110 @@ static void test_live_helpers(void)
     }
 }
 
+static void test_labels(void)
+{
+    CreateDirectoryW(L"build\\lbl_test", NULL);
+    SetEnvironmentVariableW(L"STC_DATA_DIR", L"build\\lbl_test");
+    DeleteFileW(L"build\\lbl_test\\labels.ini");
+    stc_label_set("zzz.exe", "", "", "");               /* clearing in a missing file is harmless */
+    assert(stc_label_get("a.exe") == NULL && !strcmp(stc_disp("a.exe"), "a.exe"));
+    assert(stc_label_set("a.exe", "Alpha", "Work", "Deep work") == 0);
+    assert(!strcmp(stc_label_get("A.EXE"), "Alpha") && !strcmp(stc_disp("a.exe"), "Alpha"));   /* exe names are case-insensitive */
+    assert(!strcmp(stc_category("a.exe"), "Work"));       /* user assignment beats config and defaults */
+    assert(!strcmp(stc_label_topic("a.exe"), "Deep work"));
+    assert(stc_app_match("a.exe", "alp") && stc_app_match("a.exe", "a.e") && !stc_app_match("a.exe", "beta"));
+    assert(stc_label_set("a.exe", NULL, "Play", NULL) == 0);   /* NULL leaves the other fields alone */
+    assert(!strcmp(stc_label_get("a.exe"), "Alpha") && !strcmp(stc_category("a.exe"), "Play"));
+    assert(stc_label_set("a.exe", "", "", "") == 0);     /* "" removes */
+    assert(stc_label_get("a.exe") == NULL && stc_label_topic("a.exe") == NULL);
+    assert(strcmp(stc_category("a.exe"), "Play"));
+    assert(stc_label_set("\xc3\xa9t\xc3\xa9.exe", "\xe2\x80\x9cCaf\xc3\xa9\xe2\x80\x9d", NULL, NULL) == 0);   /* non-ASCII survives */
+    assert(!strcmp(stc_label_get("\xc3\xa9t\xc3\xa9.exe"), "\xe2\x80\x9cCaf\xc3\xa9\xe2\x80\x9d"));
+    DeleteFileW(L"build\\lbl_test\\labels.ini");
+    SetEnvironmentVariableW(L"STC_DATA_DIR", NULL);
+}
+
+static int cat_idx(const profile *p, const char *n)
+{
+    int i;
+    for (i = 0; i < p->ncat; i++) if (!strcmp(p->cat_name[i], n)) return i;
+    return -1;
+}
+
+static int has(char (*lines)[200], int n, const char *needle)
+{
+    int i;
+    for (i = 0; i < n; i++) if (strstr(lines[i], needle)) return 1;
+    return 0;
+}
+
+/* Two weeks: Work (a.exe + c.exe, active, 09:00-11:00) and Fun (b.exe, passive, 22:00-23:00) every day;
+ * Thursday of the second week has an extra 8 h of passive Fun. */
+static void test_dashboard(void)
+{
+    sqlite3 *db = mkdb();
+    dash *d = malloc(sizeof *d);
+    stc_args a;
+    time_t d0 = at(2026, 1, 5, 0, 0, 0);               /* a Monday: the window; the week before is "previous" */
+    int day, w, wk, fun;
+    rd_set(0, 0, 80);
+    CreateDirectoryW(L"build\\lbl_test", NULL);
+    SetEnvironmentVariableW(L"STC_DATA_DIR", L"build\\lbl_test");
+    DeleteFileW(L"build\\lbl_test\\labels.ini");
+    stc_label_set("a.exe", NULL, "Work", NULL);
+    stc_label_set("c.exe", NULL, "Work", NULL);
+    stc_label_set("b.exe", NULL, "Fun", NULL);
+    for (w = -1; w <= 0; w++)
+        for (day = 0; day < 7; day++) {
+            int y = 2026, mo = 1, dd = 5 + 7 * w + day;
+            add(db, at(y, mo, dd, 9, 0, 0), at(y, mo, dd, 10, 30, 0), 1, STC_ACTIVE);
+            add(db, at(y, mo, dd, 10, 30, 0), at(y, mo, dd, 11, 0, 0), 3, STC_ACTIVE);
+            add(db, at(y, mo, dd, 22, 0, 0), at(y, mo, dd, 23, 0, 0), 2, STC_PASSIVE);
+            if (w == 0 && day == 3) add(db, at(y, mo, dd, 12, 0, 0), at(y, mo, dd, 20, 0, 0), 2, STC_PASSIVE);
+        }
+    memset(&a, 0, sizeof a);
+    a.days = 7; a.from = d0; a.to = d0 + 7 * 86400; a.top = 12;
+    assert(dash_compute(db, &a, d) == 0);
+    wk = cat_idx(&d->cur, "Work"); fun = cat_idx(&d->cur, "Fun");
+    assert(d->cur.ncat == 2 && wk >= 0 && fun >= 0);
+    assert(d->cur.cat_act[wk] == 7 * 7200 && d->cur.cat_pas[fun] == 7 * 3600 + 8 * 3600);
+    assert(d->cur.cat_hour[wk][9] == 7 * 3600 && d->cur.cat_hour[fun][22] == 7 * 3600);
+    assert(d->cur.cat_wk[wk][1] == 2 * 7200 && d->cur.cat_wk[wk][0] == 5 * 7200);   /* Sat+Sun vs Mon-Fri */
+    assert(d->s_focus >= 0 && d->s_focus <= 100 && d->s_variety >= 0 && d->s_variety <= 100);
+    {   const catstat *cs = NULL;
+        int i;
+        for (i = 0; i < d->ncs; i++) if (!strcmp(d->cs[i].name, "Work")) cs = &d->cs[i];
+        assert(cs && cs->stretches == 7 && cs->longest == 7200 && cs->focus_s == 7 * 7200);   /* a.exe then c.exe: one stretch */
+    }
+    assert(d->nfind >= 3);
+    assert(strstr(d->find[0], "Fun leads"));              /* 15 h vs 14 h */
+    assert(has(d->find, d->nfind, "Work peaks at 09:00") || has(d->find, d->nfind, "Fun peaks"));
+    assert(has(d->find, d->nfind, "100% of Fun is passive"));
+    assert(d->nanom >= 1 && strstr(d->anom[0], "Thu 08"));
+    assert(d->s_consist >= 0 && d->s_consist < 100);
+    dash_free(d);
+    free(d);
+    DeleteFileW(L"build\\lbl_test\\labels.ini");
+    SetEnvironmentVariableW(L"STC_DATA_DIR", NULL);
+    sqlite3_close(db);
+}
+
+static void test_live_clamp_and_args(void)
+{
+    char *argv[] = { "x", "report", "--days", "3" };
+    char *argv2[] = { "x", "report" };
+    stc_args a;
+    assert(live_clamp(5, 10, 20) == 0 && live_clamp(-3, 50, 20) == 0);   /* fits: no scrolling */
+    assert(live_clamp(99, 50, 20) == 30 && live_clamp(10, 50, 20) == 10);
+    assert(args_parse(4, argv, 2, 7, &a) == 0 && a.days_set && a.days == 3);
+    assert(args_parse(2, argv2, 2, 7, &a) == 0 && !a.days_set && a.days == 7);
+}
+
 int main(void)
 {
+    test_labels();
+    test_dashboard();
+    test_live_clamp_and_args();
     test_live_helpers();
     test_render();
     test_profile();

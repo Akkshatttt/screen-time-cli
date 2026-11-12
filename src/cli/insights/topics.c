@@ -25,7 +25,7 @@ static void on_seg(void *ctx, const stc_seg *s)
     long d = (long)(s->end - s->start);
     int t = -1;
     if (s->state == STC_AWAY) return;
-    if (c->filter && c->filter[0] && !stc_stristr(s->name, c->filter)) return;
+    if (c->filter && c->filter[0] && !stc_app_match(s->name, c->filter)) return;
     c->total += d;
     if (s->title) {
         if (s->title_id >= c->ctitle) {
@@ -79,11 +79,21 @@ int cmd_topics(sqlite3 *db, const stc_args *a)
             snprintf(e[n].label, sizeof e[n].label, "%s", c.rules[i].key);
             e[n].sec = c.topic_sec[i]; e[n].topic = 1; n++;
         }
-    for (i = 0; i < c.cexe; i++)
-        if (c.exe_sec[i] > 0 && n < MAXL) {
-            snprintf(e[n].label, sizeof e[n].label, "other: %s", c.exe_name[i]);
-            e[n].sec = c.exe_sec[i]; e[n].topic = 0; n++;
+    for (i = 0; i < c.cexe; i++) {
+        const char *tn;
+        int j;
+        if (c.exe_sec[i] <= 0) continue;
+        tn = stc_label_topic(c.exe_name[i]);        /* exe assigned to a topic with `label` */
+        if (tn) {
+            for (j = 0; j < n && !(e[j].topic && !_stricmp(e[j].label, tn)); j++) ;
+            if (j < n) { e[j].sec += c.exe_sec[i]; continue; }
         }
+        if (n < MAXL) {
+            if (tn) snprintf(e[n].label, sizeof e[n].label, "%s", tn);
+            else snprintf(e[n].label, sizeof e[n].label, "other: %s", stc_disp(c.exe_name[i]));
+            e[n].sec = c.exe_sec[i]; e[n].topic = tn != NULL; n++;
+        }
+    }
     free(c.exe_sec); free(c.exe_name); free(c.title_topic);
     qsort(e, n, sizeof e[0], by_sec);
     shown = n < a->top ? n : a->top;
@@ -112,6 +122,6 @@ int cmd_topics(sqlite3 *db, const stc_args *a)
                rd_trunc(b3, sizeof b3, e[i].label, 26), K(K_RESET), rd_dur(b1, sizeof b1, e[i].sec),
                rd_bar(bb, sizeof bb, max ? (double)e[i].sec / max : 0, 0, 24), K(K_DIM), 100.0 * e[i].sec / c.total, K(K_RESET));
     }
-    printf("\n   %stopics come from window titles; edit [topics] in config.ini (Name=keyword|keyword)%s\n\n", K(K_DIM), K(K_RESET));
+    printf("\n   %stopics come from window titles; edit [topics] in config.ini, or put an app in a topic: screen-time-cli label%s\n\n", K(K_DIM), K(K_RESET));
     return 0;
 }

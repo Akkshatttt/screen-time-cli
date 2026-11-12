@@ -2,6 +2,13 @@
 
 Semantic versioning, still 0.x: the minor number grows with features and the patch number with fixes. 1.0.0 is for when the core planned features exist.
 
+## 0.5.0 (2026-11-13)
+- `today` and `report` are now different views. `today` is a one-screen glance (pace against yesterday at the same time of day, what is running now, hourly strip by category, top 5 apps, sessions and switches). `report` is a dashboard: plain-language findings, scores (focus, fragmentation, variety, consistency), category mix with trends, a category x hour rhythm grid, weekend share, focus per category (average and longest stretch, deep share, switches per active hour), unusual days and apps. Its default is 7 days, shortened when less data exists. `week` and `month` keep the old per-app bars view.
+- New `label` command: give an exe a friendly name and a category or topic (numbered picker, or `label <exe> [name] [--category C] [--topic T]`, `label --clear <exe>`). Stored in a new `labels.ini` that the program owns; `config.ini` is still never written. Labels show everywhere an app name is shown, `--app` matches labels, and an exe assigned to a topic now counts under that topic in `topics`.
+- New `export [spans|daily] [--format csv|json] [--out FILE]`; refuses to overwrite a file.
+- `live`: views taller than the window scroll (arrows, PgUp/PgDn, Home/End) and the footer shows the line range, so the Daily and Hour of day charts no longer get cut off.
+- `--json` only gains fields: `report` adds `scores`, `categories`, `findings`, `anomalies` and a `label` per item; `today` is a new command object. No schema change (still v1), no new dependency. Cost: `report` runs five scans instead of two (7 days about 160 ms, one year about 0.7 s on 5 years of synthetic data on this machine).
+
 ## 0.4.0 (2026-11-09)
 - New `live` command: a full-screen window on the terminal's alternate screen. Hotkeys (t, r, w, m, h, e, f, s, o) or a `:` command line switch views; each view replaces the previous one in place and refreshes every 5 s; `q` or Ctrl+C returns to the shell exactly as it was. Needs a console (refuses when piped). One-shot commands and `--json` output are unchanged. No schema change, no new dependency (about 150 lines in `src/cli/live.c`).
 

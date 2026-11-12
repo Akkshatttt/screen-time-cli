@@ -67,12 +67,29 @@ static int capture(sqlite3 *db, const char *cmd, char *buf, int cap)
     return n;
 }
 
-static void draw(const char *buf, int rows, int cols, const char *footer, int show_cursor)
+int live_clamp(int off, int total, int visible)
+{
+    int max = total > visible ? total - visible : 0;
+    return off < 0 ? 0 : off > max ? max : off;
+}
+
+static int count_lines(const char *buf)
+{
+    int n = 0;
+    const char *p;
+    for (p = buf; *p; p++) if (*p == '\n') n++;
+    return n + (p > buf && p[-1] != '\n');
+}
+
+/* Paints lines off.. of buf into the rows above the footer row. */
+static void draw(const char *buf, int rows, int cols, const char *footer, int show_cursor, int off)
 {
     const char *p = buf;
     int line = 0;
     fputs("\x1b[H", stdout);
-    while (*p && line < rows - 2) {
+    while (off-- > 0 && (p = strchr(p, '\n')) != NULL) p++;
+    if (!p) p = buf + strlen(buf);
+    while (*p && line < rows - 1) {
         const char *e = strchr(p, '\n');
         size_t len = e ? (size_t)(e - p) : strlen(p);
         if (len && p[len - 1] == '\r') len--;
@@ -94,7 +111,7 @@ int cmd_live(sqlite3 *db, int argc, char **argv)
     DWORD imode, omode;
     static char buf[FRAME_CAP];
     char cur[256] = "today", cmd[256] = "";
-    int cl = 0, editing = 0, quit = 0, i;
+    int cl = 0, editing = 0, quit = 0, i, scroll = 0;
 
     if (!GetConsoleMode(hin, &imode) || !GetConsoleMode(hout, &omode) || !SetConsoleMode(hout, omode | 0x0004)) {
         puts("live needs an interactive terminal (stdin and stdout must be a console).");
@@ -112,17 +129,21 @@ int cmd_live(sqlite3 *db, int argc, char **argv)
 
     while (!quit) {
         CONSOLE_SCREEN_BUFFER_INFO ci;
-        char footer[400];
-        int rows = 25, cols = 80, dirty = 0;
+        char footer[400], info[48] = "";
+        int rows = 25, cols = 80, dirty = 0, total, visible;
         rd_init(); /* re-reads the width and colors for this frame */
         if (GetConsoleScreenBufferInfo(hout, &ci)) {
             rows = ci.srWindow.Bottom - ci.srWindow.Top + 1;
             cols = ci.srWindow.Right - ci.srWindow.Left + 1;
         }
         capture(db, cur, buf, FRAME_CAP);
+        total = count_lines(buf);
+        visible = rows > 2 ? rows - 1 : 1;
+        scroll = live_clamp(scroll, total, visible);
+        if (total > visible) snprintf(info, sizeof info, " lines %d-%d of %d (arrows, PgUp/PgDn)  ", scroll + 1, scroll + visible, total);
         if (editing) snprintf(footer, sizeof footer, ":%s", cmd);
-        else snprintf(footer, sizeof footer, " t today  r report  w week  m month  h heatmap  e trends  f focus  s switches  o topics  : command  q quit   [%s]", cur);
-        draw(buf, rows, cols, footer, editing);
+        else snprintf(footer, sizeof footer, "%s t today  r report  w week  m month  h heatmap  e trends  f focus  s switches  o topics  : command  q quit   [%s]", info, cur);
+        draw(buf, rows, cols, footer, editing, scroll);
 
         while (!dirty && !quit) {
             INPUT_RECORD ir[32];
@@ -139,7 +160,7 @@ int cmd_live(sqlite3 *db, int argc, char **argv)
                 if (editing) {
                     if (ch == '\r') {
                         if (!strcmp(cmd, "q") || !strcmp(cmd, "quit")) quit = 1;
-                        else if (cl) snprintf(cur, sizeof cur, "%s", cmd);
+                        else if (cl) { snprintf(cur, sizeof cur, "%s", cmd); scroll = 0; }
                         editing = 0; dirty = 1;
                     } else if (ir[k].Event.KeyEvent.wVirtualKeyCode == VK_ESCAPE) { editing = 0; dirty = 1; }
                     else if (ch == 8) { if (cl) cmd[--cl] = 0; dirty = 1; }
@@ -147,7 +168,19 @@ int cmd_live(sqlite3 *db, int argc, char **argv)
                 } else if (ch == ':') { editing = 1; cl = 0; cmd[0] = 0; dirty = 1; }
                 else if (ch == 'q' || ch == 'Q') quit = 1;
                 else if (ch == ' ' || ir[k].Event.KeyEvent.wVirtualKeyCode == VK_F5) dirty = 1;
-                else if ((v = live_key_view(ch)) != NULL) { snprintf(cur, sizeof cur, "%s", v); dirty = 1; }
+                else if ((v = live_key_view(ch)) != NULL) { snprintf(cur, sizeof cur, "%s", v); scroll = 0; dirty = 1; }
+                else {   /* scrolling when the view is taller than the window */
+                    WORD vk = ir[k].Event.KeyEvent.wVirtualKeyCode;
+                    int page = visible > 2 ? visible - 1 : 1;
+                    if (vk == VK_UP) scroll--;
+                    else if (vk == VK_DOWN) scroll++;
+                    else if (vk == VK_PRIOR) scroll -= page;
+                    else if (vk == VK_NEXT) scroll += page;
+                    else if (vk == VK_HOME) scroll = 0;
+                    else if (vk == VK_END) scroll = 1 << 30;
+                    else continue;
+                    dirty = 1;
+                }
             }
         }
     }

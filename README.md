@@ -46,13 +46,17 @@ touched by upgrades. Databases are migrated in place after a backup (`data.db.ba
 | Command | Does |
 |---|---|
 | `status` | daemon state and last recorded window |
-| `report` (`today` / `week` / `month`) | per-app time with bars and trends. Options: `--days N`, `--app NAME`, `--by category`, `--top N`, `--json` |
+| `today` | the day so far: pace against yesterday at the same time, what is running now, an hourly strip by category, top apps, attention |
+| `report` | dashboard over the last 7 days (fewer if less is recorded): plain-language findings, scores (focus, fragmentation, variety, consistency), category mix, when each category peaks, focus by category, unusual days and apps. Options: `--days N`, `--app NAME`, `--by category`, `--top N`, `--json` |
+| `week` / `month` | per-app bars with trends and daily totals (same options) |
+| `export [spans\|daily]` | dump data as CSV or JSON: `--days N`, `--format csv\|json`, `--out FILE` (never overwrites) |
+| `label` | name an app and assign it a category or topic: no arguments = numbered picker; `label <exe> [name] [--category C] [--topic T]`; `label --clear <exe>`. Saved in `labels.ini` (the program owns that file; `config.ini` stays yours) |
 | `heatmap` | weekday x hour-of-day usage grid |
 | `trends` | this period vs the previous one, weekly rhythm, late-night share |
 | `focus` | sessions, breaks, longest single-app blocks, focus score |
 | `switches` | app switching rate, by hour, most common hops |
 | `topics` | time by topic from window titles |
-| `live [view]` | full-screen window; each view replaces the last and refreshes every 5 s. Keys: `t` today, `r` report, `w` week, `m` month, `h` heatmap, `e` trends, `f` focus, `s` switches, `o` topics, space refresh, `:` command line (e.g. `:report --days 14 --app chrome`), `q` quit. Your shell screen is restored on exit |
+| `live [view]` | full-screen window; each view replaces the last and refreshes every 5 s. Keys: `t` today, `r` report, `w` week, `m` month, `h` heatmap, `e` trends, `f` focus, `s` switches, `o` topics, space refresh, `:` command line (e.g. `:report --days 14 --app chrome`), arrows / PgUp / PgDn / Home / End scroll a view taller than the window, `q` quit. Your shell screen is restored on exit |
 | `start` / `stop` / `pause` / `resume` | control the daemon |
 | `install` | per-user install or in-place upgrade |
 | `uninstall` | remove the application, keep your data (asks y/N; `--yes` skips) |

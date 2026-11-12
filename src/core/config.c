@@ -6,16 +6,25 @@
 #include <ctype.h>
 #include "stc.h"
 
-int stc_cfg_section(const char *section, stc_kv *out, int max)
+/* Full path of an ini file in the data directory. */
+int stc_ini_path(const char *file, wchar_t *out, size_t n)
 {
     char dir[MAX_PATH * 3];
-    wchar_t wdir[MAX_PATH], ini[MAX_PATH * 2], wsec[64], buf[8192];
+    wchar_t wdir[MAX_PATH], wfile[64];
+    if (stc_data_dir(dir, sizeof dir)) return -1;
+    MultiByteToWideChar(CP_UTF8, 0, dir, -1, wdir, MAX_PATH);
+    MultiByteToWideChar(CP_UTF8, 0, file, -1, wfile, 64);
+    _snwprintf(out, n, L"%ls\\%ls", wdir, wfile);
+    return 0;
+}
+
+int stc_ini_section(const char *file, const char *section, stc_kv *out, int max)
+{
+    wchar_t ini[MAX_PATH * 2], wsec[64], buf[8192];
     DWORD n, i;
     int count = 0;
-    if (stc_data_dir(dir, sizeof dir)) return 0;
-    MultiByteToWideChar(CP_UTF8, 0, dir, -1, wdir, MAX_PATH);
+    if (stc_ini_path(file, ini, MAX_PATH * 2)) return 0;
     MultiByteToWideChar(CP_UTF8, 0, section, -1, wsec, 64);
-    _snwprintf(ini, MAX_PATH * 2, L"%ls\\config.ini", wdir);
     n = GetPrivateProfileSectionW(wsec, buf, 8192, ini);
     for (i = 0; i < n && count < max;) {
         wchar_t *line = buf + i, *eq = wcschr(line, L'=');
@@ -30,6 +39,8 @@ int stc_cfg_section(const char *section, stc_kv *out, int max)
     }
     return count;
 }
+
+int stc_cfg_section(const char *section, stc_kv *out, int max) { return stc_ini_section("config.ini", section, out, max); }
 
 /* Case-insensitive substring search. */
 const char *stc_stristr(const char *h, const char *n)
@@ -81,6 +92,8 @@ static int g_ncat = -1;
 const char *stc_category(const char *exe_name)
 {
     int i;
+    const char *lc = stc_label_cat(exe_name);
+    if (lc) return lc;
     if (g_ncat < 0) {
         g_ncat = stc_cfg_section("categories", g_cat, 32);
         if (!g_ncat) {
@@ -91,6 +104,17 @@ const char *stc_category(const char *exe_name)
     for (i = 0; i < g_ncat; i++)
         if (list_has(g_cat[i].val, exe_name)) return g_cat[i].key;
     return "Other";
+}
+
+/* Distinct category names: user-assigned ones, config/default ones, then "Other". Returns the count. */
+int stc_category_names(char names[][48], int max)
+{
+    int i, n = 0;
+    (void)stc_category("");   /* loads the table */
+    for (i = 0; i < g_ncat && n < max; i++) snprintf(names[n++], 48, "%s", g_cat[i].key);
+    n = stc_label_cats(names, n, max);
+    if (n < max) snprintf(names[n++], 48, "Other");
+    return n;
 }
 
 static const stc_kv DEFAULT_TOPICS[] = {
@@ -113,6 +137,15 @@ const stc_kv *stc_topics(int *n)
     }
     *n = cnt;
     return t;
+}
+
+/* True when exe matches filter by file name or by user label (case-insensitive substring). */
+int stc_app_match(const char *exe, const char *filter)
+{
+    const char *lb;
+    if (stc_stristr(exe, filter)) return 1;
+    lb = stc_label_get(exe);   /* ponytail: linear label scan per span, fine for a few dozen labels */
+    return lb && stc_stristr(lb, filter) ? 1 : 0;
 }
 
 /* Index of the first topic whose keyword appears in title, or -1. */

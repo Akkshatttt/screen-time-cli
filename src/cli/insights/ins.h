@@ -12,12 +12,18 @@ typedef struct {
     int by_cat;             /* --by category */
     int top;                /* --top N rows */
     char app[64];           /* --app NAME filter (substring, case-insensitive) */
+    int days_set;           /* --days given explicitly (else the command's default, which report may shrink) */
+    char what[8];           /* export: "spans" or "daily" */
+    char fmt[8];            /* export: "csv" or "json" */
+    char out[260];          /* export: --out FILE (empty = stdout) */
 } stc_args;
 
 /* Parses the options after the command name. default_days used when none given. Returns 0 or -1 (message printed). */
 int args_parse(int argc, char **argv, int first, int default_days, stc_args *a);
 
-typedef struct { sqlite3_int64 id; char name[48]; long act, pas; } app_t;
+#define MAXCAT 34
+/* name = exe file name (or category name after profile_to_categories); disp = label shown to the user. */
+typedef struct { sqlite3_int64 id; char name[48]; char disp[48]; int cat; long act, pas; } app_t;
 
 typedef struct {
     time_t from, to;
@@ -30,6 +36,12 @@ typedef struct {
     long hm[7][24];                 /* seconds by weekday (Mon=0) and hour, active+passive */
     const char *filter;
     int last_day;
+    /* per category (stc_category of each exe); filled alongside the app totals */
+    int ncat;
+    char cat_name[MAXCAT][32];
+    long cat_act[MAXCAT], cat_pas[MAXCAT];
+    long cat_hour[MAXCAT][24];      /* seconds by local hour, active+passive */
+    long cat_wk[MAXCAT][2];         /* [0] Mon-Fri, [1] Sat-Sun */
 } profile;
 
 int profile_compute(sqlite3 *db, time_t from, time_t to, const char *app_filter, profile *p);
@@ -39,8 +51,14 @@ const app_t *profile_find(const profile *p, const char *name);
 void profile_free(profile *p);
 time_t prev_from(const stc_args *a);            /* start of the equally long previous window */
 
+void breakdown_daily(const profile *p);
+void breakdown_json(const stc_args *a, const profile *cur, const profile *prev, int more);
+
 /* Each returns 0 on success. */
-int cmd_report(sqlite3 *db, const stc_args *a);
+int cmd_report(sqlite3 *db, const stc_args *a);     /* dashboard (dash.c) */
+int cmd_today(sqlite3 *db, const stc_args *a);      /* live glance (today.c) */
+int cmd_breakdown(sqlite3 *db, const stc_args *a);  /* apps + daily + hour bars; week and month (report.c) */
+int cmd_export(sqlite3 *db, const stc_args *a);     /* CSV / JSON dump (export.c) */
 int cmd_heatmap(sqlite3 *db, const stc_args *a);
 int cmd_trends(sqlite3 *db, const stc_args *a);
 int cmd_focus(sqlite3 *db, const stc_args *a);
@@ -78,4 +96,19 @@ typedef struct {
     int npairs;
 } switch_result;
 void switches_compute(sqlite3 *db, time_t from, time_t to, switch_result *r);
+
+/* ---- dashboard (dash.c): cross-field numbers behind `report`, kept apart from printing so tests can check them ---- */
+typedef struct { char name[32]; long stretches, stretch_s, longest, focus_s, sw_in; } catstat;
+typedef struct {
+    profile cur, prev;              /* this window and the equally long one before it */
+    focus_result fr;
+    switch_result sw;
+    catstat cs[MAXCAT]; int ncs;    /* single-category stretches and switches into each category */
+    int s_focus, s_variety, s_consist;   /* 0..100; -1 when there is too little data */
+    double frag;                    /* switches per active hour */
+    int nfind; char find[6][200];   /* plain-language findings, most important first */
+    int nanom; char anom[6][120];   /* days and apps far from their usual level */
+} dash;
+int dash_compute(sqlite3 *db, const stc_args *a, dash *d);
+void dash_free(dash *d);
 #endif

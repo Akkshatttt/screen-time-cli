@@ -7,6 +7,7 @@
 
 #include <time.h>
 #include <stddef.h>
+#include <wchar.h>
 #include "../../vendor/sqlite3.h"
 
 enum { STC_ACTIVE = 0, STC_PASSIVE = 1, STC_AWAY = 2 };
@@ -94,5 +95,18 @@ const char *stc_stristr(const char *haystack, const char *needle);
 const char *stc_category(const char *exe_name);          /* config [categories] or built-in defaults; "Other" */
 const stc_kv *stc_topics(int *n);                         /* config [topics] or built-in defaults */
 int stc_topic_of(const char *title, const stc_kv *rules, int n);
+int stc_ini_path(const char *file, wchar_t *out, size_t n);   /* file inside the data dir */
+int stc_ini_section(const char *file, const char *section, stc_kv *out, int max);
+int stc_category_names(char names[][48], int max);        /* every known category, "Other" last */
+int stc_app_match(const char *exe, const char *filter);   /* --app filter: exe name or label substring */
+
+/* ---- labels.c: labels.ini, owned by the program (labels, category and topic assignments per exe) ---- */
+const char *stc_label_get(const char *exe);               /* NULL when none */
+const char *stc_label_cat(const char *exe);
+const char *stc_label_topic(const char *exe);
+const char *stc_disp(const char *exe);                    /* label, else the exe name; valid until the next label write */
+int stc_label_cats(char names[][48], int n, int max);     /* appends user-assigned category names missing from names */
+/* NULL leaves a field untouched, "" removes it. Returns 0 on success. */
+int stc_label_set(const char *exe, const char *label, const char *cat, const char *topic);
 
 #endif

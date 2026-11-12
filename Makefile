@@ -8,10 +8,10 @@ SQLFLAGS = -Os -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DEFAU
 DCFLAGS = $(CFLAGS) -fno-asynchronous-unwind-tables -fno-ident
 B = build
 
-COREO = $(B)/db.o $(B)/hb.o $(B)/span.o $(B)/state.o $(B)/sched.o $(B)/query.o $(B)/scan.o $(B)/config.o
+COREO = $(B)/db.o $(B)/hb.o $(B)/span.o $(B)/state.o $(B)/sched.o $(B)/query.o $(B)/scan.o $(B)/config.o $(B)/labels.o
 CORE = $(COREO) $(B)/sqlite3.o
 INS = $(wildcard src/cli/insights/*.c)
-INSH = $(wildcard src/cli/insights/*.h) src/cli/render.h src/cli/live.h
+INSH = $(wildcard src/cli/insights/*.h) src/cli/render.h src/cli/live.h src/cli/label.h
 INST = $(B)/install.o
 ICON = assets/icons/ico/screen-time-cli.ico assets/app.rc src/core/version.h
 
@@ -36,7 +36,7 @@ $(B)/app-daemon.o: assets/app-daemon.rc $(ICON) | $(B)
 $(B)/install.o: src/install/install.c src/install/install.h src/core/stc.h src/core/version.h | $(B)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(B)/screen-time-cli.exe: src/cli/main.c src/cli/update.c src/cli/render.c src/cli/live.c $(INS) $(INSH) $(CORE) $(INST) $(B)/app-cli.o
+$(B)/screen-time-cli.exe: src/cli/main.c src/cli/update.c src/cli/render.c src/cli/live.c src/cli/label.c $(INS) $(INSH) $(CORE) $(INST) $(B)/app-cli.o
 	$(CC) $(CFLAGS) $(filter %.c %.o,$^) -o $@ $(LDFLAGS) -lshlwapi
 
 # ole32/uuid are not linked: media.c loads them only while probing

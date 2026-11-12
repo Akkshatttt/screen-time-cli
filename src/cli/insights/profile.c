@@ -4,7 +4,16 @@
 #include <string.h>
 #include "ins.h"
 
-static void add_app(profile *p, const stc_seg *s, long d)
+static int cat_index(profile *p, const char *name)
+{
+    int i;
+    for (i = 0; i < p->ncat; i++) if (!strcmp(p->cat_name[i], name)) return i;
+    if (p->ncat == MAXCAT) return MAXCAT - 1;       /* overflow bucket (config caps categories at 32) */
+    snprintf(p->cat_name[p->ncat], sizeof p->cat_name[0], "%s", name);
+    return p->ncat++;
+}
+
+static int add_app(profile *p, const stc_seg *s, long d)
 {
     int ai;
     if (s->exe >= p->cidx) {
@@ -23,19 +32,24 @@ static void add_app(profile *p, const stc_seg *s, long d)
         memset(&p->apps[ai], 0, sizeof(app_t));
         p->apps[ai].id = s->exe;
         snprintf(p->apps[ai].name, sizeof p->apps[ai].name, "%s", s->name);
+        snprintf(p->apps[ai].disp, sizeof p->apps[ai].disp, "%s", stc_disp(s->name));
+        p->apps[ai].cat = cat_index(p, stc_category(s->name));
         p->idx[s->exe] = ai + 1;
     }
-    if (s->state == STC_ACTIVE) p->apps[ai].act += d; else p->apps[ai].pas += d;
+    if (s->state == STC_ACTIVE) { p->apps[ai].act += d; p->cat_act[p->apps[ai].cat] += d; }
+    else { p->apps[ai].pas += d; p->cat_pas[p->apps[ai].cat] += d; }
+    return ai;
 }
 
 static void on_seg(void *ctx, const stc_seg *s)
 {
     profile *p = ctx;
     time_t t, e;
-    int k;
+    int k, ci;
     if (s->state == STC_AWAY) return;
-    if (p->filter && p->filter[0] && !stc_stristr(s->name, p->filter)) return;
-    add_app(p, s, (long)(s->end - s->start));
+    if (p->filter && p->filter[0] && !stc_app_match(s->name, p->filter)) return;
+    k = add_app(p, s, (long)(s->end - s->start));   /* may realloc apps: index only after the call */
+    ci = p->apps[k].cat;
     if (s->state == STC_ACTIVE) p->act += (long)(s->end - s->start); else p->pas += (long)(s->end - s->start);
 
     while (p->last_day < p->ndays - 1 && s->start >= p->dayb[p->last_day + 1]) p->last_day++;
@@ -49,6 +63,8 @@ static void on_seg(void *ctx, const stc_seg *s)
         time_t hend = t + 3600 - (tm.tm_min * 60 + tm.tm_sec);
         e = s->end < hend ? s->end : hend;
         p->hm[(tm.tm_wday + 6) % 7][tm.tm_hour] += (long)(e - t);
+        p->cat_hour[ci][tm.tm_hour] += (long)(e - t);
+        p->cat_wk[ci][tm.tm_wday == 0 || tm.tm_wday == 6] += (long)(e - t);
     }
 }
 
@@ -84,7 +100,7 @@ void profile_to_categories(profile *p)
     for (i = 0; i < p->napps; i++) {
         const char *c = stc_category(p->apps[i].name);
         for (j = 0; j < n && strcmp(cat[j].name, c); j++) ;
-        if (j == n) { snprintf(cat[n].name, sizeof cat[n].name, "%s", c); n++; }
+        if (j == n) { snprintf(cat[n].name, sizeof cat[n].name, "%s", c); snprintf(cat[n].disp, sizeof cat[n].disp, "%s", c); n++; }
         cat[j].act += p->apps[i].act;
         cat[j].pas += p->apps[i].pas;
     }

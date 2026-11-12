@@ -115,8 +115,8 @@ int cmd_switches(sqlite3 *db, const stc_args *a)
 
     rd_section("Most common hops");
     for (i = 0; i < r.npairs; i++)
-        printf("  %-20s %s%s%s %-20s %s%5ld%s\n", rd_trunc(b1, sizeof b1, r.pairs[i].from, 20), K(K_DIM),
-               rd_unicode ? "\xe2\x86\x92" : "->", K(K_RESET), rd_trunc(b2, sizeof b2, r.pairs[i].to, 20),
+        printf("  %-20s %s%s%s %-20s %s%5ld%s\n", rd_trunc(b1, sizeof b1, stc_disp(r.pairs[i].from), 20), K(K_DIM),
+               rd_unicode ? "\xe2\x86\x92" : "->", K(K_RESET), rd_trunc(b2, sizeof b2, stc_disp(r.pairs[i].to), 20),
                K(K_BOLD), r.pairs[i].n, K(K_RESET));
     printf("\n");
     return 0;

@@ -11,4 +11,7 @@ const char *live_key_view(int ch);
 
 /* Splits line in place on blanks into at most max tokens; returns the count. */
 int live_split(char *line, char **argv, int max);
+
+/* Keeps a scroll offset inside the output: 0 .. total-visible (0 when everything fits). */
+int live_clamp(int off, int total, int visible);
 #endif

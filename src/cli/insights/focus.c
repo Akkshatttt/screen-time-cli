@@ -53,7 +53,7 @@ static void on_seg(void *ctx, const stc_seg *s)
     fctx *c = ctx;
     long dur = (long)(s->end - s->start);
     if (s->state == STC_AWAY) return;
-    if (c->filter && c->filter[0] && !stc_stristr(s->name, c->filter)) return;
+    if (c->filter && c->filter[0] && !stc_app_match(s->name, c->filter)) return;
     c->r->screen_s += dur;
 
     if (c->in_session && s->start - c->s_end > SESSION_GAP) {
@@ -108,6 +108,8 @@ int cmd_focus(sqlite3 *db, const stc_args *a)
         for (i = 0; i < r.nblocks; i++) {
             printf("%s{\"app\":", i ? "," : "");
             rd_jstr(r.blocks[i].name);
+            printf(",\"label\":");
+            rd_jstr(stc_disp(r.blocks[i].name));
             printf(",\"start\":%I64d,\"seconds\":%ld}", (long long)r.blocks[i].at, r.blocks[i].dur);
         }
         printf("]}\n");
@@ -134,7 +136,7 @@ int cmd_focus(sqlite3 *db, const stc_args *a)
     for (i = 0; i < r.nblocks; i++) {
         struct tm tm = *localtime(&r.blocks[i].at);
         strftime(b3, sizeof b3, "%a %d %b %H:%M", &tm);
-        printf("  %s%d%s  %-22s %8s   %s%s%s\n", K(K_DIM), i + 1, K(K_RESET), rd_trunc(b1, sizeof b1, r.blocks[i].name, 22),
+        printf("  %s%d%s  %-22s %8s   %s%s%s\n", K(K_DIM), i + 1, K(K_RESET), rd_trunc(b1, sizeof b1, stc_disp(r.blocks[i].name), 22),
                rd_dur(b2, sizeof b2, r.blocks[i].dur), K(K_DIM), b3, K(K_RESET));
     }
     printf("\n");
